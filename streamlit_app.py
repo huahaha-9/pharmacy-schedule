@@ -18,6 +18,24 @@ def get_supabase():
     )
 
 supabase = get_supabase()
+# ============================================================
+# Supabase 連線測試
+# ============================================================
+
+try:
+    employee_test = (
+        supabase
+        .table("employees")
+        .select("employee_id,name")
+        .limit(5)
+        .execute()
+    )
+
+    st.success("✅ Supabase 連線成功")
+
+except Exception as error:
+    st.error("❌ Supabase 連線失敗")
+    st.exception(error)
 
 
 # ============================================================
