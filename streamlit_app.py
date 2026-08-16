@@ -413,10 +413,190 @@ for i, employee in enumerate(ss.employees):
         ss.employees[i] = updated_employee
 
 
+
 employee_ids = [
     employee["id"]
     for employee in employees
 ]
+
+
+# ============================================================
+# 新增員工
+# ============================================================
+
+with st.expander("➕ 新增員工"):
+        new_id = st.text_input(
+        "員工代號",
+        placeholder="例如 F5 或 P6",
+        key="new_employee_id",
+    )
+
+    new_name = st.text_input(
+        "姓名",
+        key="new_employee_name",
+    )
+
+    new_type = st.radio(
+        "員工類型",
+        ["FT", "PT"],
+        horizontal=True,
+        key="new_employee_type",
+    )
+
+    col1, col2, col3 = st.columns(3)
+
+    with col1:
+        new_pharmacist = st.checkbox(
+            "藥師",
+            key="new_employee_pharmacist",
+        )
+
+    with col2:
+        new_senior = st.checkbox(
+            "成熟人力",
+            key="new_employee_senior",
+        )
+
+    with col3:
+        new_reducible = st.checkbox(
+            "可減班",
+            key="new_employee_reducible",
+        )
+
+    default_days = 5 if new_type == "FT" else 4
+    default_hours = 8.0 if new_type == "FT" else 7.0
+
+    col4, col5 = st.columns(2)
+
+    with col4:
+        new_work_days = st.number_input(
+            "每週上班天數",
+            min_value=0,
+            max_value=7,
+            value=default_days,
+            step=1,
+            key="new_employee_work_days",
+        )
+
+    with col5:
+        new_hours = st.number_input(
+            "一班工時",
+            min_value=0.5,
+            max_value=16.0,
+            value=default_hours,
+            step=0.5,
+            key="new_employee_hours",
+        )
+
+    if st.button(
+        "新增員工",
+        type="primary",
+        key="add_employee_button",
+        use_container_width=True,
+    ):
+        employee_id = new_id.strip().upper()
+        employee_name = new_name.strip()
+
+        if not employee_id:
+            st.error("請輸入員工代號")
+
+        elif not employee_name:
+            st.error("請輸入員工姓名")
+
+        elif employee_id in employee_ids:
+            st.error("這個員工代號已存在")
+
+        else:
+            try:
+                supabase.table("employees").insert({
+                    "employee_id": employee_id,
+                    "name": employee_name,
+                    "employment_type": new_type,
+                    "is_pharmacist": new_pharmacist,
+                    "is_senior": new_senior,
+                    "is_reducible": new_reducible,
+                    "is_active": True,
+                    "work_days": int(new_work_days),
+                    "hours_per_day": float(new_hours),
+                    "can_morning": True,
+                    "can_night": True,
+                    "preferred_shift": None,
+                    "prefer_consecutive_off": False,
+                }).execute()
+
+                ss.employees = load_employees()
+                st.success(f"✅ 已新增 {employee_name}")
+                st.rerun()
+
+            except Exception as error:
+                st.error("❌ 新增員工失敗")
+                st.exception(error)
+    
+    # ============================================================
+# 刪除員工
+# ============================================================
+
+with st.expander("🗑️ 刪除員工"):
+    delete_employee_id = st.selectbox(
+        "選擇要刪除的員工",
+        employee_ids,
+        key="delete_employee_id",
+    )
+
+    delete_employee = next(
+        (
+            employee
+            for employee in employees
+            if employee["id"] == delete_employee_id
+        ),
+        None,
+    )
+
+    if delete_employee:
+
+        st.warning(
+            f"即將刪除："
+            f"{delete_employee['name']} "
+            f"({delete_employee_id})"
+        )
+
+        st.caption(
+            "刪除後，與此員工相關的排假、固定規則、"
+            "避免同班偏好及其他已設定為 CASCADE 的資料也會一併刪除。"
+        )
+
+        confirm_delete = st.checkbox(
+            "我確認要刪除此員工",
+            key="confirm_delete_employee",
+        )
+
+        if st.button(
+            "確定刪除員工",
+            disabled=not confirm_delete,
+            key="delete_employee_button",
+            use_container_width=True,
+        ):
+
+            try:
+
+                supabase.table("employees").delete().eq(
+                    "employee_id",
+                    delete_employee_id,
+                ).execute()
+
+                ss.employees = load_employees()
+
+                st.success(
+                    f"✅ 已刪除 {delete_employee['name']}"
+                )
+
+                st.rerun()
+
+            except Exception as error:
+
+                st.error("❌ 刪除員工失敗")
+                st.exception(error)
+    
 # ============================================================
 # 儲存員工設定到 Supabase
 # ============================================================
