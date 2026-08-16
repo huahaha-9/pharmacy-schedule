@@ -1190,22 +1190,23 @@ def solve_schedule(
 
     solver = cp_model.CpSolver()
 
-    solver.parameters.max_time_in_seconds = 10.0
+solver.parameters.max_time_in_seconds = 10.0
 
-    status = solver.Solve(model)
+status = solver.Solve(model)
 
-    if status not in (
-        cp_model.OPTIMAL,
-        cp_model.FEASIBLE,
-    ):
+status_name = solver.StatusName(status)
 
-        return {
-            "success": False,
-            "message": (
-                "無法找到符合硬性條件的排班，"
-                "請檢查固定班、排假或上班天數設定。"
-            ),
-        }
+if status not in (
+    cp_model.OPTIMAL,
+    cp_model.FEASIBLE,
+):
+    return {
+        "success": False,
+        "status": status_name,
+        "message": (
+            f"排班求解失敗，OR-Tools 狀態：{status_name}。"
+        ),
+    }
 
     # ========================================================
     # 班表結果
