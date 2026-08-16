@@ -1,8 +1,23 @@
 import streamlit as st
 from datetime import date, timedelta
+from supabase import create_client
 
 from backend.models import ScheduleRequest
 from backend.scheduler import solve_schedule
+
+
+# ============================================================
+# Supabase 連線
+# ============================================================
+
+@st.cache_resource
+def get_supabase():
+    return create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_SECRET_KEY"],
+    )
+
+supabase = get_supabase()
 
 
 # ============================================================
