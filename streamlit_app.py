@@ -19,6 +19,41 @@ def get_supabase():
 
 supabase = get_supabase()
 # ============================================================
+# 從 Supabase 讀取員工
+# ============================================================
+
+def load_employees():
+
+    response = (
+        supabase
+        .table("employees")
+        .select("*")
+        .eq("is_active", True)
+        .order("employee_id")
+        .execute()
+    )
+
+    employees = []
+
+    for row in response.data:
+
+        employees.append({
+            "id": row["employee_id"],
+            "name": row["name"],
+            "employee_type": row["employment_type"],
+            "is_pharmacist": row["is_pharmacist"],
+            "is_senior": row["is_senior"],
+            "reducible": row["is_reducible"],
+            "work_days": row["work_days"],
+            "hours_per_day": float(row["hours_per_day"]),
+            "can_morning": row["can_morning"],
+            "can_night": row["can_night"],
+            "preferred_shift": row["preferred_shift"],
+            "prefer_consecutive_off": row["prefer_consecutive_off"],
+        })
+
+    return employees
+# ============================================================
 # Supabase 連線測試
 # ============================================================
 
@@ -223,7 +258,7 @@ DEFAULT_EMPLOYEES = [
 ss = st.session_state
 
 if "employees" not in ss:
-    ss.employees = DEFAULT_EMPLOYEES
+    ss.employees = load_employees()
 
 if "meetings" not in ss:
     ss.meetings = []
