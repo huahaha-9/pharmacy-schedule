@@ -425,7 +425,8 @@ employee_ids = [
 # ============================================================
 
 with st.expander("➕ 新增員工"):
-        new_id = st.text_input(
+
+    new_id = st.text_input(
         "員工代號",
         placeholder="例如 F5 或 P6",
         key="new_employee_id",
@@ -488,7 +489,7 @@ with st.expander("➕ 新增員工"):
             key="new_employee_hours",
         )
 
-    if st.button(
+       if st.button(
         "新增員工",
         type="primary",
         key="add_employee_button",
