@@ -364,23 +364,30 @@ def add_hard_constraints(
             ])
 
     # --------------------------------------------------------
-    # 3. 固定班
-    # --------------------------------------------------------
+    # # --------------------------------------------------------
+# 3. 固定班別
+# --------------------------------------------------------
+# 員工上班時只能排指定班別，但仍可正常休假
 
-    for rule in request.fixed_shifts:
+for rule in request.fixed_shifts:
 
-        if rule.employee not in employee_ids:
-            continue
+    if rule.employee not in employee_ids:
+        continue
 
-        for current_date in dates:
+    for current_date in dates:
 
-            model.Add(
-                x[
-                    rule.employee,
-                    current_date,
-                    rule.shift
-                ] == 1
-            )
+        for shift in [MORNING, MIDDLE, NIGHT, MEETING]:
+
+            if shift != rule.shift:
+                model.Add(
+                    x[
+                        rule.employee,
+                        current_date,
+                        shift
+                    ] == 0
+                )
+    
+            
 
     # --------------------------------------------------------
     # 4. 固定休星期
