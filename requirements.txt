@@ -4,3 +4,4 @@ ortools
 pydantic
 streamlit
 requests
+supabase
