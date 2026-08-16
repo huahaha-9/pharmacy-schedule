@@ -423,7 +423,42 @@ employee_ids = [
 # ============================================================
 # 新增員工
 # ============================================================
+# ============================================================
+# 新增員工
+# ============================================================
 
+with st.expander("➕ 新增員工"):
+    new_id = st.text_input("員工代號", key="new_id")
+    new_name = st.text_input("員工姓名", key="new_name")
+
+    if st.button("新增", key="add_employee"):
+        if not new_id.strip() or not new_name.strip():
+            st.warning("請填寫員工代號和姓名")
+        else:
+            try:
+                supabase.table("employees").insert({
+                    "employee_id": new_id.strip().upper(),
+                    "name": new_name.strip(),
+                    "employment_type": "PT",
+                    "is_pharmacist": False,
+                    "is_senior": False,
+                    "is_reducible": False,
+                    "is_active": True,
+                    "work_days": 4,
+                    "hours_per_day": 7.0,
+                    "can_morning": True,
+                    "can_night": True,
+                    "preferred_shift": None,
+                    "prefer_consecutive_off": False,
+                }).execute()
+
+                ss.employees = load_employees()
+                st.success("✅ 新增成功")
+                st.rerun()
+
+            except Exception as error:
+                st.error("❌ 新增失敗")
+                st.exception(error)
 
     
     # ============================================================
