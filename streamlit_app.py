@@ -418,6 +418,45 @@ employee_ids = [
     for employee in employees
 ]
 # ============================================================
+# 儲存員工設定到 Supabase
+# ============================================================
+
+if st.button(
+    "💾 儲存員工設定",
+    key="save_employee_settings",
+    use_container_width=True,
+):
+
+    try:
+
+        for employee in employees:
+
+            supabase.table("employees").upsert({
+                "employee_id": employee["id"],
+                "name": employee["name"],
+                "employment_type": employee["employee_type"],
+                "is_pharmacist": employee["is_pharmacist"],
+                "is_senior": employee["is_senior"],
+                "is_reducible": employee["reducible"],
+                "is_active": True,
+                "work_days": employee["work_days"],
+                "hours_per_day": employee["hours_per_day"],
+                "can_morning": employee.get("can_morning", True),
+                "can_night": employee.get("can_night", True),
+                "preferred_shift": employee.get("preferred_shift"),
+                "prefer_consecutive_off": employee.get(
+                    "prefer_consecutive_off",
+                    False,
+                ),
+            }).execute()
+
+        st.success("✅ 員工設定已儲存")
+
+    except Exception as error:
+
+        st.error("❌ 儲存員工設定失敗")
+        st.exception(error)
+# ============================================================
 # 3. 營業時間
 # ============================================================
 
