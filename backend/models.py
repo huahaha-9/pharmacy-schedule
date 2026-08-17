@@ -67,14 +67,18 @@ class BusinessHoursConfig(BaseModel):
 # 3. 班別需求
 # ============================================================
 
-class ShiftDemand(BaseModel):
-    morning: int = Field(default=2, ge=0)
-    middle: int = Field(default=0, ge=0)
-    night: int = Field(default=3, ge=0)
+class WeeklyShiftDemand(BaseModel):
+    monday: ShiftDemand
+    tuesday: ShiftDemand
+    wednesday: ShiftDemand
+    thursday: ShiftDemand
+    friday: ShiftDemand
+    saturday: ShiftDemand
+    sunday: ShiftDemand
 
 
 class ShiftConfig(BaseModel):
-    demand: ShiftDemand
+    demand: WeeklyShiftDemand
 
     # 中班預設開始時間
     middle_start: str = "12:00"
