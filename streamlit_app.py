@@ -856,7 +856,8 @@ else:
                 st.exception(error)
     with manager_tab3:
         st.subheader("🧩 生成班表")
-
+if not st.session_state.manager_logged_in:
+    st.stop()
 # ============================================================
 # 基本常數
 # ============================================================
