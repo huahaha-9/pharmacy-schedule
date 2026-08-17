@@ -85,406 +85,412 @@ st.set_page_config(
 
 st.title("💊 排班系統")
 st.caption("設定人員、營業時間與排班條件後，自動產生一週班表")
+
+
+if "manager_logged_in" not in st.session_state:
+    st.session_state.manager_logged_in = False
+
+
 # ============================================================
 # 員工排假
 # ============================================================
 
-st.header("🗓️ 員工排假")
+if not st.session_state.manager_logged_in:
 
-employee_rows = load_employees()
+    st.header("🗓️ 員工排假")
 
-employee_name_map = {
-    employee["id"]: employee["name"]
-    for employee in employee_rows
-}
+    employee_rows = load_employees()
 
-employee_id = st.selectbox(
-    "我是",
-    options=list(employee_name_map.keys()),
-    format_func=lambda x: employee_name_map[x],
-    key="leave_employee_id",
-)
+    employee_name_map = {
+        employee["id"]: employee["name"]
+        for employee in employee_rows
+    }
 
-min_leave_date = date.today() + timedelta(days=10)
-max_leave_date = date.today() + timedelta(days=183)
-
-leave_date = st.date_input(
-    "排假日期",
-    min_value=min_leave_date,
-    max_value=max_leave_date,
-    value=min_leave_date,
-    key="leave_date",
-)
-
-request_label = st.selectbox(
-    "排假 / 指定班",
-    [
-        "休假",
-        "指定早班",
-        "指定中班",
-        "指定晚班",
-    ],
-    key="leave_request_type",
-)
-
-request_type_map = {
-    "休假": "OFF",
-    "指定早班": "MORNING",
-    "指定中班": "MIDDLE",
-    "指定晚班": "NIGHT",
-}
-
-request_type = request_type_map[request_label]
-
-start_time_value = None
-end_time_value = None
-
-half_hour_options = [
-    f"{hour:02d}:{minute:02d}"
-    for hour in range(24)
-    for minute in (0, 30)
-]
-
-if request_type == "MORNING":
-    use_early_leave = st.checkbox(
-        "需要提早下班",
-        key="use_early_leave",
+    employee_id = st.selectbox(
+        "我是",
+        options=list(employee_name_map.keys()),
+        format_func=lambda x: employee_name_map[x],
+        key="leave_employee_id",
     )
-
-    if use_early_leave:
-        end_time_value = st.selectbox(
-            "提早下班時間",
-            options=half_hour_options,
-            index=half_hour_options.index("15:00"),
-            key="leave_end_time",
-        )
-
-elif request_type == "NIGHT":
-    use_late_start = st.checkbox(
-        "需要延後上班",
-        key="use_late_start",
+    
+    min_leave_date = date.today() + timedelta(days=10)
+    max_leave_date = date.today() + timedelta(days=183)
+    
+    leave_date = st.date_input(
+        "排假日期",
+        min_value=min_leave_date,
+        max_value=max_leave_date,
+        value=min_leave_date,
+        key="leave_date",
     )
-
-    if use_late_start:
-        start_time_value = st.selectbox(
-            "延後上班時間",
-            options=half_hour_options,
-            index=half_hour_options.index("18:00"),
-            key="leave_start_time",
-        )
-
-if st.button(
-    "💾 儲存送出",
-    key="submit_leave_request",
-    use_container_width=True,
-):
-    try:
-        payload = {
-            "employee_id": employee_id,
-            "request_date": leave_date.isoformat(),
-            "request_type": request_type,
-            "start_time": start_time_value,
-            "end_time": end_time_value,
-        }
-
-        supabase.table("leave_requests").upsert(
-            payload,
-            on_conflict="employee_id,request_date",
-        ).execute()
-
-        st.success("✅ 排假已儲存")
-
-    except Exception as error:
-        st.error("❌ 排假儲存失敗")
-        st.exception(error)
-
-st.divider()
-# ============================================================
-# 我的排假紀錄
-# ============================================================
-
-st.subheader("📋 我的排假紀錄")
-
-request_type_display = {
-    "OFF": "休假",
-    "MORNING": "早班",
-    "MIDDLE": "中班",
-    "NIGHT": "晚班",
-}
-
-try:
-    my_requests_response = (
-        supabase
-        .table("leave_requests")
-        .select("*")
-        .eq("employee_id", employee_id)
-        .order("request_date")
-        .execute()
+    
+    request_label = st.selectbox(
+        "排假 / 指定班",
+        [
+            "休假",
+            "指定早班",
+            "指定中班",
+            "指定晚班",
+        ],
+        key="leave_request_type",
     )
-
-    my_requests = my_requests_response.data
-
-except Exception as error:
-    my_requests = []
-    st.error("❌ 無法讀取排假紀錄")
-    st.exception(error)
-
-
-if not my_requests:
-    st.info("目前沒有排假紀錄。")
-
-
-for record in my_requests:
-
-    record_type = record["request_type"]
-
-    title = (
-        f"{record['request_date']}｜"
-        f"{request_type_display.get(record_type, record_type)}"
-    )
-
-    if record_type == "MORNING" and record.get("end_time"):
-        title += f"｜{str(record['end_time'])[:5]} 下班"
-
-    elif record_type == "NIGHT" and record.get("start_time"):
-        title += f"｜{str(record['start_time'])[:5]} 上班"
-
-
-    with st.expander(title):
-
-        st.write(
-            f"日期：{record['request_date']}"
+    
+    request_type_map = {
+        "休假": "OFF",
+        "指定早班": "MORNING",
+        "指定中班": "MIDDLE",
+        "指定晚班": "NIGHT",
+    }
+    
+    request_type = request_type_map[request_label]
+    
+    start_time_value = None
+    end_time_value = None
+    
+    half_hour_options = [
+        f"{hour:02d}:{minute:02d}"
+        for hour in range(24)
+        for minute in (0, 30)
+    ]
+    
+    if request_type == "MORNING":
+        use_early_leave = st.checkbox(
+            "需要提早下班",
+            key="use_early_leave",
         )
-
-        st.write(
-            f"類型：{request_type_display.get(record_type, record_type)}"
-        )
-
-        if record_type == "MORNING" and record.get("end_time"):
-            st.write(
-                f"提早下班：{str(record['end_time'])[:5]}"
+    
+        if use_early_leave:
+            end_time_value = st.selectbox(
+                "提早下班時間",
+                options=half_hour_options,
+                index=half_hour_options.index("15:00"),
+                key="leave_end_time",
             )
-
-        if record_type == "NIGHT" and record.get("start_time"):
-            st.write(
-                f"延後上班：{str(record['start_time'])[:5]}"
+    
+    elif request_type == "NIGHT":
+        use_late_start = st.checkbox(
+            "需要延後上班",
+            key="use_late_start",
+        )
+    
+        if use_late_start:
+            start_time_value = st.selectbox(
+                "延後上班時間",
+                options=half_hour_options,
+                index=half_hour_options.index("18:00"),
+                key="leave_start_time",
             )
-            st.markdown("#### ✏️ 修改排假")
-
-            edit_date = st.date_input(
-                "修改日期",
-                value=date.fromisoformat(record["request_date"]),
-                min_value=min_leave_date,
-                max_value=max_leave_date,
-                key=f"edit_date_{record['id']}",
-            )
-            
-            edit_options = [
-                "休假",
-                "指定早班",
-                "指定中班",
-                "指定晚班",
-            ]
-            
-            code_to_label = {
-                "OFF": "休假",
-                "MORNING": "指定早班",
-                "MIDDLE": "指定中班",
-                "NIGHT": "指定晚班",
+    
+    if st.button(
+        "💾 儲存送出",
+        key="submit_leave_request",
+        use_container_width=True,
+    ):
+        try:
+            payload = {
+                "employee_id": employee_id,
+                "request_date": leave_date.isoformat(),
+                "request_type": request_type,
+                "start_time": start_time_value,
+                "end_time": end_time_value,
             }
-            
-            edit_label = st.selectbox(
-                "修改排假 / 指定班",
-                edit_options,
-                index=edit_options.index(
-                    code_to_label.get(record_type, "休假")
-                ),
-                key=f"edit_type_{record['id']}",
+    
+            supabase.table("leave_requests").upsert(
+                payload,
+                on_conflict="employee_id,request_date",
+            ).execute()
+    
+            st.success("✅ 排假已儲存")
+    
+        except Exception as error:
+            st.error("❌ 排假儲存失敗")
+            st.exception(error)
+    
+    st.divider()
+    # ============================================================
+    # 我的排假紀錄
+    # ============================================================
+    
+    st.subheader("📋 我的排假紀錄")
+    
+    request_type_display = {
+        "OFF": "休假",
+        "MORNING": "早班",
+        "MIDDLE": "中班",
+        "NIGHT": "晚班",
+    }
+    
+    try:
+        my_requests_response = (
+            supabase
+            .table("leave_requests")
+            .select("*")
+            .eq("employee_id", employee_id)
+            .order("request_date")
+            .execute()
+        )
+    
+        my_requests = my_requests_response.data
+    
+    except Exception as error:
+        my_requests = []
+        st.error("❌ 無法讀取排假紀錄")
+        st.exception(error)
+    
+    
+    if not my_requests:
+        st.info("目前沒有排假紀錄。")
+    
+    
+    for record in my_requests:
+    
+        record_type = record["request_type"]
+    
+        title = (
+            f"{record['request_date']}｜"
+            f"{request_type_display.get(record_type, record_type)}"
+        )
+    
+        if record_type == "MORNING" and record.get("end_time"):
+            title += f"｜{str(record['end_time'])[:5]} 下班"
+    
+        elif record_type == "NIGHT" and record.get("start_time"):
+            title += f"｜{str(record['start_time'])[:5]} 上班"
+    
+    
+        with st.expander(title):
+    
+            st.write(
+                f"日期：{record['request_date']}"
             )
-            
-            edit_type = request_type_map[edit_label]
-            
-            edit_start_time = None
-            edit_end_time = None
-            
-            if edit_type == "MORNING":
-            
-                old_end_time = (
-                    str(record["end_time"])[:5]
-                    if record.get("end_time")
-                    else "15:00"
+    
+            st.write(
+                f"類型：{request_type_display.get(record_type, record_type)}"
+            )
+    
+            if record_type == "MORNING" and record.get("end_time"):
+                st.write(
+                    f"提早下班：{str(record['end_time'])[:5]}"
                 )
-            
-                use_early_end = st.checkbox(
-                    "提早下班",
-                    value=record.get("end_time") is not None,
-                    key=f"edit_early_{record['id']}",
+    
+            if record_type == "NIGHT" and record.get("start_time"):
+                st.write(
+                    f"延後上班：{str(record['start_time'])[:5]}"
                 )
-            
-                if use_early_end:
-                    edit_end_time = st.selectbox(
-                        "新的下班時間",
-                        half_hour_options,
-                        index=half_hour_options.index(old_end_time),
-                        key=f"edit_end_{record['id']}",
+                st.markdown("#### ✏️ 修改排假")
+    
+                edit_date = st.date_input(
+                    "修改日期",
+                    value=date.fromisoformat(record["request_date"]),
+                    min_value=min_leave_date,
+                    max_value=max_leave_date,
+                    key=f"edit_date_{record['id']}",
+                )
+                
+                edit_options = [
+                    "休假",
+                    "指定早班",
+                    "指定中班",
+                    "指定晚班",
+                ]
+                
+                code_to_label = {
+                    "OFF": "休假",
+                    "MORNING": "指定早班",
+                    "MIDDLE": "指定中班",
+                    "NIGHT": "指定晚班",
+                }
+                
+                edit_label = st.selectbox(
+                    "修改排假 / 指定班",
+                    edit_options,
+                    index=edit_options.index(
+                        code_to_label.get(record_type, "休假")
+                    ),
+                    key=f"edit_type_{record['id']}",
+                )
+                
+                edit_type = request_type_map[edit_label]
+                
+                edit_start_time = None
+                edit_end_time = None
+                
+                if edit_type == "MORNING":
+                
+                    old_end_time = (
+                        str(record["end_time"])[:5]
+                        if record.get("end_time")
+                        else "15:00"
                     )
-            
-            elif edit_type == "NIGHT":
-            
-                old_start_time = (
-                    str(record["start_time"])[:5]
-                    if record.get("start_time")
-                    else "18:00"
-                )
-            
-                use_late_start = st.checkbox(
-                    "延後上班",
-                    value=record.get("start_time") is not None,
-                    key=f"edit_late_{record['id']}",
-                )
-            
-                if use_late_start:
-                    edit_start_time = st.selectbox(
-                        "新的上班時間",
-                        half_hour_options,
-                        index=half_hour_options.index(old_start_time),
-                        key=f"edit_start_{record['id']}",
+                
+                    use_early_end = st.checkbox(
+                        "提早下班",
+                        value=record.get("end_time") is not None,
+                        key=f"edit_early_{record['id']}",
                     )
-            
+                
+                    if use_early_end:
+                        edit_end_time = st.selectbox(
+                            "新的下班時間",
+                            half_hour_options,
+                            index=half_hour_options.index(old_end_time),
+                            key=f"edit_end_{record['id']}",
+                        )
+                
+                elif edit_type == "NIGHT":
+                
+                    old_start_time = (
+                        str(record["start_time"])[:5]
+                        if record.get("start_time")
+                        else "18:00"
+                    )
+                
+                    use_late_start = st.checkbox(
+                        "延後上班",
+                        value=record.get("start_time") is not None,
+                        key=f"edit_late_{record['id']}",
+                    )
+                
+                    if use_late_start:
+                        edit_start_time = st.selectbox(
+                            "新的上班時間",
+                            half_hour_options,
+                            index=half_hour_options.index(old_start_time),
+                            key=f"edit_start_{record['id']}",
+                        )
+                
+                if st.button(
+                    "💾 儲存修改",
+                    key=f"save_edit_{record['id']}",
+                    use_container_width=True,
+                ):
+                    try:
+                
+                        supabase.table(
+                            "leave_requests"
+                        ).update({
+                            "request_date": edit_date.isoformat(),
+                            "request_type": edit_type,
+                            "start_time": edit_start_time,
+                            "end_time": edit_end_time,
+                        }).eq(
+                            "id",
+                            record["id"],
+                        ).execute()
+                
+                        st.success("✅ 修改完成")
+                        st.rerun()
+                
+                    except Exception as error:
+                        st.error("❌ 修改失敗")
+                        st.exception(error)
+    
+    
             if st.button(
-                "💾 儲存修改",
-                key=f"save_edit_{record['id']}",
+                "🗑️ 刪除這筆排假",
+                key=f"delete_leave_{record['id']}",
                 use_container_width=True,
             ):
+    
                 try:
-            
+    
                     supabase.table(
                         "leave_requests"
-                    ).update({
-                        "request_date": edit_date.isoformat(),
-                        "request_type": edit_type,
-                        "start_time": edit_start_time,
-                        "end_time": edit_end_time,
-                    }).eq(
+                    ).delete().eq(
                         "id",
                         record["id"],
                     ).execute()
-            
-                    st.success("✅ 修改完成")
+    
+                    st.success("✅ 已刪除")
                     st.rerun()
-            
+    
                 except Exception as error:
-                    st.error("❌ 修改失敗")
+    
+                    st.error("❌ 刪除失敗")
                     st.exception(error)
-
-
-        if st.button(
-            "🗑️ 刪除這筆排假",
-            key=f"delete_leave_{record['id']}",
-            use_container_width=True,
-        ):
-
-            try:
-
-                supabase.table(
-                    "leave_requests"
-                ).delete().eq(
-                    "id",
-                    record["id"],
-                ).execute()
-
-                st.success("✅ 已刪除")
-                st.rerun()
-
-            except Exception as error:
-
-                st.error("❌ 刪除失敗")
-                st.exception(error)
-
-
-st.divider()
-# ============================================================
-# 同一天的排假
-# ============================================================
-
-st.subheader("👥 這一天還有誰排假？")
-
-check_date = st.date_input(
-    "查看日期",
-    value=leave_date,
-    min_value=min_leave_date,
-    max_value=max_leave_date,
-    key="check_same_day_date",
-)
-
-try:
-    same_day_response = (
-        supabase
-        .table("leave_requests")
-        .select("*")
-        .eq("request_date", check_date.isoformat())
-        .order("employee_id")
-        .execute()
+    
+    
+    st.divider()
+    # ============================================================
+    # 同一天的排假
+    # ============================================================
+    
+    st.subheader("👥 這一天還有誰排假？")
+    
+    check_date = st.date_input(
+        "查看日期",
+        value=leave_date,
+        min_value=min_leave_date,
+        max_value=max_leave_date,
+        key="check_same_day_date",
     )
-
-    same_day_requests = same_day_response.data
-
-except Exception as error:
-    same_day_requests = []
-    st.error("❌ 無法讀取當日排假")
-    st.exception(error)
-
-
-if not same_day_requests:
-
-    st.info("這一天目前沒有人排假。")
-
-else:
-
-    for item in same_day_requests:
-
-        person_name = employee_name_map.get(
-            item["employee_id"],
-            item["employee_id"],
+    
+    try:
+        same_day_response = (
+            supabase
+            .table("leave_requests")
+            .select("*")
+            .eq("request_date", check_date.isoformat())
+            .order("employee_id")
+            .execute()
         )
-
-        type_text = request_type_display.get(
-            item["request_type"],
-            item["request_type"],
-        )
-
-        extra_text = ""
-
-        if (
-            item["request_type"] == "MORNING"
-            and item.get("end_time")
-        ):
-            extra_text = (
-                f"｜{str(item['end_time'])[:5]} 下班"
+    
+        same_day_requests = same_day_response.data
+    
+    except Exception as error:
+        same_day_requests = []
+        st.error("❌ 無法讀取當日排假")
+        st.exception(error)
+    
+    
+    if not same_day_requests:
+    
+        st.info("這一天目前沒有人排假。")
+    
+    else:
+    
+        for item in same_day_requests:
+    
+            person_name = employee_name_map.get(
+                item["employee_id"],
+                item["employee_id"],
             )
-
-        elif (
-            item["request_type"] == "NIGHT"
-            and item.get("start_time")
-        ):
-            extra_text = (
-                f"｜{str(item['start_time'])[:5]} 上班"
+    
+            type_text = request_type_display.get(
+                item["request_type"],
+                item["request_type"],
             )
-
-        st.write(
-            f"👤 **{person_name}**｜{type_text}{extra_text}"
-        )
-
-
-st.divider()
+    
+            extra_text = ""
+    
+            if (
+                item["request_type"] == "MORNING"
+                and item.get("end_time")
+            ):
+                extra_text = (
+                    f"｜{str(item['end_time'])[:5]} 下班"
+                )
+    
+            elif (
+                item["request_type"] == "NIGHT"
+                and item.get("start_time")
+            ):
+                extra_text = (
+                    f"｜{str(item['start_time'])[:5]} 上班"
+                )
+    
+            st.write(
+                f"👤 **{person_name}**｜{type_text}{extra_text}"
+            )
+    
+    
+    st.divider()
 # ============================================================
 # 店長登入
 # ============================================================
 
 st.header("🔐 店長專區")
 
-if "manager_logged_in" not in st.session_state:
-    st.session_state.manager_logged_in = False
 
 if not st.session_state.manager_logged_in:
 
