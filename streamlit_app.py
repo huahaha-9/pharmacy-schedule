@@ -477,6 +477,52 @@ else:
 
 
 st.divider()
+# ============================================================
+# 店長登入
+# ============================================================
+
+st.header("🔐 店長專區")
+
+if "manager_logged_in" not in st.session_state:
+    st.session_state.manager_logged_in = False
+
+if not st.session_state.manager_logged_in:
+
+    manager_password = st.text_input(
+        "店長密碼",
+        type="password",
+        key="manager_password_input",
+    )
+
+    if st.button(
+        "登入店長專區",
+        key="manager_login_button",
+        use_container_width=True,
+    ):
+        if manager_password == st.secrets["MANAGER_PASSWORD"]:
+            st.session_state.manager_logged_in = True
+            st.success("✅ 登入成功")
+            st.rerun()
+        else:
+            st.error("❌ 密碼錯誤")
+
+else:
+
+    st.success("✅ 已登入店長專區")
+
+    if st.button(
+        "登出店長專區",
+        key="manager_logout_button",
+    ):
+        st.session_state.manager_logged_in = False
+        st.rerun()
+
+    st.subheader("店長功能")
+
+    st.info(
+        "下一階段會加入：員工基本資料、營業時間、"
+        "本週總結、生成班表、歷史班表。"
+    )
 
 # ============================================================
 # 基本常數
