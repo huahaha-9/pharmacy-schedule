@@ -607,7 +607,61 @@ else:
                     f"👤 {employee_name}｜"
                     f"{request_text}{extra_text}"
                 )
-    
+        st.divider()
+
+    # --------------------------------------------------------
+    # 本週會議
+    # --------------------------------------------------------
+
+    st.markdown("### 📣 本週會議")
+
+    try:
+        summary_meetings = [
+            meeting
+            for meeting in st.session_state.meetings
+            if (
+                summary_start.isoformat()
+                <= meeting["date"]
+                <= summary_end.isoformat()
+            )
+        ]
+
+    except Exception as error:
+        summary_meetings = []
+        st.error("❌ 無法讀取本週會議")
+        st.exception(error)
+
+    if not summary_meetings:
+        st.info("本週目前沒有會議。")
+
+    else:
+        summary_meetings = sorted(
+            summary_meetings,
+            key=lambda meeting: (
+                meeting["date"],
+                meeting["start_time"],
+            ),
+        )
+
+        for meeting in summary_meetings:
+
+            attendee_names = []
+
+            for employee_id in meeting.get("attendees", []):
+                attendee_names.append(
+                    employee_name_map.get(
+                        employee_id,
+                        employee_id,
+                    )
+                )
+
+            attendee_text = "、".join(attendee_names)
+
+            st.write(
+                f"📅 {meeting['date']}｜"
+                f"🕒 {meeting['start_time']}～{meeting['end_time']}｜"
+                f"👥 {attendee_text}"
+            )
     with manager_tab3:
         st.subheader("🧩 生成班表")
 
