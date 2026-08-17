@@ -237,7 +237,16 @@ def build_demand(
             current_date,
             NIGHT
         ] = day_demand.night
+        meeting_count = sum(
+            meeting.staff_count
+            for meeting in request.meetings
+            if meeting.date == current_date
+        )
 
+        demand[
+            current_date,
+            MEETING
+        ] = meeting_count
     return demand
 
 
