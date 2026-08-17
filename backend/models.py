@@ -242,4 +242,4 @@ class ScheduleRequest(BaseModel):
     preferences: PreferenceConfig = Field(
         default_factory=PreferenceConfig
     )
-    ScheduleRequest.model_rebuild()
+ScheduleRequest.model_rebuild()
