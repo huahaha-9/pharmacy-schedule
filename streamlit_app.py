@@ -655,7 +655,204 @@ else:
                     f"👤 {meeting_employee_name}｜"
                     f"會議"
                 )
+        st.divider()
 
+        # --------------------------------------------------------
+        # 固定班 / 固定休假
+        # --------------------------------------------------------
+
+        st.markdown("### 📌 固定班 / 固定休假")
+
+        try:
+            fixed_rules_response = (
+                supabase
+                .table("employee_fixed_rules")
+                .select("*")
+                .order("employee_id")
+                .execute()
+            )
+
+            fixed_rules = fixed_rules_response.data
+
+        except Exception as error:
+            fixed_rules = []
+            st.error("❌ 無法讀取固定規則")
+            st.exception(error)
+
+        if not fixed_rules:
+            st.info("目前沒有固定班或固定休假設定。")
+
+        else:
+            weekday_display = {
+                0: "週一",
+                1: "週二",
+                2: "週三",
+                3: "週四",
+                4: "週五",
+                5: "週六",
+                6: "週日",
+            }
+
+            shift_display = {
+                "MORNING": "早班",
+                "MIDDLE": "中班",
+                "NIGHT": "晚班",
+            }
+
+            for rule in fixed_rules:
+
+                employee_name = employee_name_map.get(
+                    rule["employee_id"],
+                    rule["employee_id"],
+                )
+
+                if rule["rule_type"] == "FIXED_SHIFT":
+                    rule_text = (
+                        f"固定{shift_display.get(rule['shift'], rule['shift'])}"
+                    )
+
+                else:
+                    weekday_text = weekday_display.get(
+                        rule.get("weekday"),
+                        "",
+                    )
+
+                    rule_text = (
+                        f"固定{weekday_text}休假"
+                    )
+
+                st.write(
+                    f"👤 {employee_name}｜{rule_text}"
+                )
+                        st.divider()
+
+        # --------------------------------------------------------
+        # 本週人力配置
+        # --------------------------------------------------------
+
+        st.markdown("### 👥 本週人力配置")
+
+                staffing_days = [
+            (0, "週一"),
+            (1, "週二"),
+            (2, "週三"),
+            (3, "週四"),
+            (4, "週五"),
+            (5, "週六"),
+            (6, "週日"),
+        ]
+
+        try:
+            staffing_response = (
+                supabase
+                .table("weekly_staffing")
+                .select("*")
+                .eq("week_start", summary_start.isoformat())
+                .order("weekday")
+                .execute()
+            )
+
+            staffing_rows = staffing_response.data
+
+        except Exception as error:
+            staffing_rows = []
+            st.error("❌ 無法讀取本週人力配置")
+            st.exception(error)
+
+        staffing_map = {
+            int(row["weekday"]): row
+            for row in staffing_rows
+        }
+
+        weekly_staffing_ui = {}
+
+        for weekday_num, day_name in staffing_days:
+
+            saved = staffing_map.get(weekday_num)
+
+            default_morning = (
+                int(saved["morning_required"])
+                if saved
+                else 2
+            )
+
+            default_middle = (
+                int(saved["middle_required"])
+                if saved
+                else 0
+            )
+
+            default_night = (
+                int(saved["night_required"])
+                if saved
+                else 3
+            )
+
+            st.markdown(f"**{day_name}**")
+
+            col1, col2, col3 = st.columns(3)
+
+            with col1:
+                morning_value = st.number_input(
+                    "早班",
+                    min_value=0,
+                    max_value=20,
+                    value=default_morning,
+                    step=1,
+                    key=f"staffing_morning_{weekday_num}",
+                )
+
+            with col2:
+                middle_value = st.number_input(
+                    "中班",
+                    min_value=0,
+                    max_value=20,
+                    value=default_middle,
+                    step=1,
+                    key=f"staffing_middle_{weekday_num}",
+                )
+
+            with col3:
+                night_value = st.number_input(
+                    "晚班",
+                    min_value=0,
+                    max_value=20,
+                    value=default_night,
+                    step=1,
+                    key=f"staffing_night_{weekday_num}",
+                )
+
+            weekly_staffing_ui[weekday_num] = {
+                "morning": int(morning_value),
+                "middle": int(middle_value),
+                "night": int(night_value),
+            }
+
+        if st.button(
+            "💾 儲存本週人力配置",
+            key="save_weekly_staffing",
+            use_container_width=True,
+        ):
+
+            try:
+                for weekday_num, values in weekly_staffing_ui.items():
+
+                    supabase.table("weekly_staffing").upsert(
+                        {
+                            "week_start": summary_start.isoformat(),
+                            "weekday": weekday_num,
+                            "morning_required": values["morning"],
+                            "middle_required": values["middle"],
+                            "night_required": values["night"],
+                        },
+                        on_conflict="week_start,weekday",
+                    ).execute()
+
+                st.success("✅ 本週人力配置已儲存")
+
+            except Exception as error:
+                st.error("❌ 儲存本週人力配置失敗")
+                st.exception(error)
     with manager_tab3:
         st.subheader("🧩 生成班表")
 
