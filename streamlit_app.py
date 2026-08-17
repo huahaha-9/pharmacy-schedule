@@ -565,7 +565,7 @@ else:
         
         employees = []
         
-        for i, employee in enumerate(ss.employees):
+        for i, employee in enumerate(st.session_state.employees):
         
             with st.expander(
                 f"{employee['id']}｜{employee['name']}"
