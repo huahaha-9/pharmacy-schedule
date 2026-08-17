@@ -724,6 +724,7 @@ else:
                 st.write(
                     f"👤 {employee_name}｜{rule_text}"
                 )
+
         st.divider()
 
         # --------------------------------------------------------
