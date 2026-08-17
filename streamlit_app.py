@@ -2438,6 +2438,46 @@ if st.button(
     # 10-6 建立要送進後端的參數
     # ========================================================
 
+       # 讀取本週人力需求
+    staffing_response = (
+        supabase
+        .table("weekly_staffing")
+        .select("*")
+        .eq("week_start", start_date.isoformat())
+        .order("weekday")
+        .execute()
+    )
+
+    staffing_rows_for_schedule = staffing_response.data or []
+
+    staffing_map_for_schedule = {
+        int(row["weekday"]): row
+        for row in staffing_rows_for_schedule
+    }
+
+    weekly_staffing_for_schedule = {}
+
+    for weekday_num in range(7):
+        saved_staffing = staffing_map_for_schedule.get(weekday_num)
+
+        weekly_staffing_for_schedule[weekday_num] = {
+            "morning": (
+                int(saved_staffing["morning_required"])
+                if saved_staffing
+                else 2
+            ),
+            "middle": (
+                int(saved_staffing["middle_required"])
+                if saved_staffing
+                else 0
+            ),
+            "night": (
+                int(saved_staffing["night_required"])
+                if saved_staffing
+                else 3
+            ),
+        }
+
     payload = {
 
         "start_date":
@@ -2454,39 +2494,39 @@ if st.button(
         "shifts": {
             "demand": {
                 "monday": {
-                    "morning": weekly_staffing_ui[0]["morning"],
-                    "middle": weekly_staffing_ui[0]["middle"],
-                    "night": weekly_staffing_ui[0]["night"],
+                    "morning": weekly_staffing_for_schedule[0]["morning"],
+                    "middle": weekly_staffing_for_schedule[0]["middle"],
+                    "night": weekly_staffing_for_schedule[0]["night"],
                 },
                 "tuesday": {
-                    "morning": weekly_staffing_ui[1]["morning"],
-                    "middle": weekly_staffing_ui[1]["middle"],
-                    "night": weekly_staffing_ui[1]["night"],
+                    "morning": weekly_staffing_for_schedule[1]["morning"],
+                    "middle": weekly_staffing_for_schedule[1]["middle"],
+                    "night": weekly_staffing_for_schedule[1]["night"],
                 },
                 "wednesday": {
-                    "morning": weekly_staffing_ui[2]["morning"],
-                    "middle": weekly_staffing_ui[2]["middle"],
-                    "night": weekly_staffing_ui[2]["night"],
+                    "morning": weekly_staffing_for_schedule[2]["morning"],
+                    "middle": weekly_staffing_for_schedule[2]["middle"],
+                    "night": weekly_staffing_for_schedule[2]["night"],
                 },
                 "thursday": {
-                    "morning": weekly_staffing_ui[3]["morning"],
-                    "middle": weekly_staffing_ui[3]["middle"],
-                    "night": weekly_staffing_ui[3]["night"],
+                    "morning": weekly_staffing_for_schedule[3]["morning"],
+                    "middle": weekly_staffing_for_schedule[3]["middle"],
+                    "night": weekly_staffing_for_schedule[3]["night"],
                 },
                 "friday": {
-                    "morning": weekly_staffing_ui[4]["morning"],
-                    "middle": weekly_staffing_ui[4]["middle"],
-                    "night": weekly_staffing_ui[4]["night"],
+                    "morning": weekly_staffing_for_schedule[4]["morning"],
+                    "middle": weekly_staffing_for_schedule[4]["middle"],
+                    "night": weekly_staffing_for_schedule[4]["night"],
                 },
                 "saturday": {
-                    "morning": weekly_staffing_ui[5]["morning"],
-                    "middle": weekly_staffing_ui[5]["middle"],
-                    "night": weekly_staffing_ui[5]["night"],
+                    "morning": weekly_staffing_for_schedule[5]["morning"],
+                    "middle": weekly_staffing_for_schedule[5]["middle"],
+                    "night": weekly_staffing_for_schedule[5]["night"],
                 },
                 "sunday": {
-                    "morning": weekly_staffing_ui[6]["morning"],
-                    "middle": weekly_staffing_ui[6]["middle"],
-                    "night": weekly_staffing_ui[6]["night"],
+                    "morning": weekly_staffing_for_schedule[6]["morning"],
+                    "middle": weekly_staffing_for_schedule[6]["middle"],
+                    "night": weekly_staffing_for_schedule[6]["night"],
                 },
             },
 
