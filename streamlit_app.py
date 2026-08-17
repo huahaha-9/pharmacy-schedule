@@ -2243,25 +2243,31 @@ if st.button(
     errors = []
 
 
-    # ========================================================
+       # ========================================================
     # 10-1 檢查營業時間
     # ========================================================
 
-    if (
-        time_to_minutes(weekday_end)
-        <= time_to_minutes(weekday_start)
-    ):
-        errors.append(
-            "週一～週五的結束營業時間必須晚於開始營業時間。"
-        )
+    day_name_map = {
+        "monday": "週一",
+        "tuesday": "週二",
+        "wednesday": "週三",
+        "thursday": "週四",
+        "friday": "週五",
+        "saturday": "週六",
+        "sunday": "週日",
+    }
 
-    if (
-        time_to_minutes(weekend_end)
-        <= time_to_minutes(weekend_start)
-    ):
-        errors.append(
-            "週六、週日的結束營業時間必須晚於開始營業時間。"
-        )
+    for day_key, day_name in day_name_map.items():
+
+        day_hours = business_hours_ui[day_key]
+
+        if (
+            time_to_minutes(day_hours["end"])
+            <= time_to_minutes(day_hours["start"])
+        ):
+            errors.append(
+                f"{day_name}的結束營業時間必須晚於開始營業時間。"
+            )
 
 
     # ========================================================
