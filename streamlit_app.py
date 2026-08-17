@@ -593,7 +593,7 @@ else:
                     extra_text = (
                         f"｜{str(item['end_time'])[:5]} 下班"
                     )
-    
+
                 elif (
                     item["request_type"] == "NIGHT"
                     and item.get("start_time")
@@ -601,67 +601,61 @@ else:
                     extra_text = (
                         f"｜{str(item['start_time'])[:5]} 上班"
                     )
-    
+
                 st.write(
                     f"📅 {item['request_date']}｜"
                     f"👤 {employee_name}｜"
                     f"{request_text}{extra_text}"
                 )
+
         st.divider()
 
-    # --------------------------------------------------------
-    # 本週會議
-    # --------------------------------------------------------
+        # --------------------------------------------------------
+        # 本週會議
+        # --------------------------------------------------------
 
-    st.markdown("### 📣 本週會議")
+        st.markdown("### 📣 本週會議")
 
-    try:
-        summary_meetings = [
-            meeting
-            for meeting in st.session_state.meetings
-            if (
-                summary_start.isoformat()
-                <= meeting["date"]
-                <= summary_end.isoformat()
+        try:
+            summary_meetings = [
+                meeting
+                for meeting in st.session_state.meetings
+                if (
+                    summary_start
+                    <= meeting["date"]
+                    <= summary_end
+                )
+            ]
+
+        except Exception as error:
+            summary_meetings = []
+            st.error("❌ 無法讀取本週會議")
+            st.exception(error)
+
+        if not summary_meetings:
+            st.info("本週目前沒有會議。")
+
+        else:
+            summary_meetings = sorted(
+                summary_meetings,
+                key=lambda meeting: meeting["date"],
             )
-        ]
 
-    except Exception as error:
-        summary_meetings = []
-        st.error("❌ 無法讀取本週會議")
-        st.exception(error)
+            for meeting in summary_meetings:
 
-    if not summary_meetings:
-        st.info("本週目前沒有會議。")
+                meeting_employee_id = meeting["employee"]
 
-    else:
-        summary_meetings = sorted(
-            summary_meetings,
-            key=lambda meeting: (
-                meeting["date"],
-                meeting["start_time"],
-            ),
-        )
-
-        for meeting in summary_meetings:
-
-            attendee_names = []
-
-            for employee_id in meeting.get("attendees", []):
-                attendee_names.append(
-                    employee_name_map.get(
-                        employee_id,
-                        employee_id,
-                    )
+                meeting_employee_name = employee_name_map.get(
+                    meeting_employee_id,
+                    meeting_employee_id,
                 )
 
-            attendee_text = "、".join(attendee_names)
+                st.write(
+                    f"📅 {meeting['date']}｜"
+                    f"👤 {meeting_employee_name}｜"
+                    f"會議"
+                )
 
-            st.write(
-                f"📅 {meeting['date']}｜"
-                f"🕒 {meeting['start_time']}～{meeting['end_time']}｜"
-                f"👥 {attendee_text}"
-            )
     with manager_tab3:
         st.subheader("🧩 生成班表")
 
