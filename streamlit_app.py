@@ -2445,20 +2445,48 @@ if st.button(
         "business_hours": business_hours_ui,
 
         "shifts": {
-
             "demand": {
-                "morning":
-                    int(morning_demand),
-                "middle":
-                    int(middle_demand),
-                "night":
-                    int(night_demand),
+                "monday": {
+                    "morning": weekly_staffing_ui[0]["morning"],
+                    "middle": weekly_staffing_ui[0]["middle"],
+                    "night": weekly_staffing_ui[0]["night"],
+                },
+                "tuesday": {
+                    "morning": weekly_staffing_ui[1]["morning"],
+                    "middle": weekly_staffing_ui[1]["middle"],
+                    "night": weekly_staffing_ui[1]["night"],
+                },
+                "wednesday": {
+                    "morning": weekly_staffing_ui[2]["morning"],
+                    "middle": weekly_staffing_ui[2]["middle"],
+                    "night": weekly_staffing_ui[2]["night"],
+                },
+                "thursday": {
+                    "morning": weekly_staffing_ui[3]["morning"],
+                    "middle": weekly_staffing_ui[3]["middle"],
+                    "night": weekly_staffing_ui[3]["night"],
+                },
+                "friday": {
+                    "morning": weekly_staffing_ui[4]["morning"],
+                    "middle": weekly_staffing_ui[4]["middle"],
+                    "night": weekly_staffing_ui[4]["night"],
+                },
+                "saturday": {
+                    "morning": weekly_staffing_ui[5]["morning"],
+                    "middle": weekly_staffing_ui[5]["middle"],
+                    "night": weekly_staffing_ui[5]["night"],
+                },
+                "sunday": {
+                    "morning": weekly_staffing_ui[6]["morning"],
+                    "middle": weekly_staffing_ui[6]["middle"],
+                    "night": weekly_staffing_ui[6]["night"],
+                },
             },
 
-            "middle_start":
-                middle_start,
+            "middle_start": middle_start,
         },
 
+        
         "meetings":
             meetings_payload,
 
