@@ -66,6 +66,11 @@ class BusinessHoursConfig(BaseModel):
 # ============================================================
 # 3. 班別需求
 # ============================================================
+class ShiftDemand(BaseModel):
+    morning: int = Field(default=2, ge=0)
+    middle: int = Field(default=0, ge=0)
+    night: int = Field(default=3, ge=0)
+
 
 class WeeklyShiftDemand(BaseModel):
     monday: ShiftDemand
@@ -242,4 +247,4 @@ class ScheduleRequest(BaseModel):
     preferences: PreferenceConfig = Field(
         default_factory=PreferenceConfig
     )
-ScheduleRequest.model_rebuild()
+
