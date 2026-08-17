@@ -1421,33 +1421,7 @@ for day_key, day_name, weekday_num, fallback_start, fallback_end in day_settings
 # 4. 每班人力
 # ============================================================
 
-st.header("🧑‍⚕️ 每班人力")
 
-col1, col2, col3 = st.columns(3)
-
-with col1:
-    morning_demand = st.number_input(
-        "早班人數",
-        min_value=0,
-        value=2,
-        step=1,
-    )
-
-with col2:
-    middle_demand = st.number_input(
-        "中班人數",
-        min_value=0,
-        value=0,
-        step=1,
-    )
-
-with col3:
-    night_demand = st.number_input(
-        "晚班人數",
-        min_value=0,
-        value=3,
-        step=1,
-    )
 
 saved_middle_start = "12:00"
 
