@@ -534,7 +534,7 @@ else:
     
         summary_start = st.date_input(
             "本週開始日期",
-            value=DEFAULT_START,
+            value=date.today(),
             key="manager_summary_start",
         )
     
