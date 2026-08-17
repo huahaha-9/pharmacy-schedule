@@ -54,11 +54,13 @@ class BusinessHours(BaseModel):
 
 
 class BusinessHoursConfig(BaseModel):
-    # 週一～週五
-    weekday: BusinessHours
-
-    # 週六、週日
-    weekend: BusinessHours
+    monday: BusinessHours
+    tuesday: BusinessHours
+    wednesday: BusinessHours
+    thursday: BusinessHours
+    friday: BusinessHours
+    saturday: BusinessHours
+    sunday: BusinessHours
 
 
 # ============================================================
