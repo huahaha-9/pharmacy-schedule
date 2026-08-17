@@ -1164,7 +1164,18 @@ def solve_schedule(
         request,
         dates,
     )
+    # 確保每天都有 MEETING demand
+    for current_date in dates:
+        meeting_count = sum(
+            meeting.staff_count
+            for meeting in request.meetings
+            if meeting.date == current_date
+        )
 
+        demand[
+            current_date,
+            MEETING
+        ] = meeting_count
     model = cp_model.CpModel()
 
     x = create_variables(
