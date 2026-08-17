@@ -199,6 +199,103 @@ if st.button(
         st.exception(error)
 
 st.divider()
+# ============================================================
+# 我的排假紀錄
+# ============================================================
+
+st.subheader("📋 我的排假紀錄")
+
+request_type_display = {
+    "OFF": "休假",
+    "MORNING": "早班",
+    "MIDDLE": "中班",
+    "NIGHT": "晚班",
+}
+
+try:
+    my_requests_response = (
+        supabase
+        .table("leave_requests")
+        .select("*")
+        .eq("employee_id", employee_id)
+        .order("request_date")
+        .execute()
+    )
+
+    my_requests = my_requests_response.data
+
+except Exception as error:
+    my_requests = []
+    st.error("❌ 無法讀取排假紀錄")
+    st.exception(error)
+
+
+if not my_requests:
+    st.info("目前沒有排假紀錄。")
+
+
+for record in my_requests:
+
+    record_type = record["request_type"]
+
+    title = (
+        f"{record['request_date']}｜"
+        f"{request_type_display.get(record_type, record_type)}"
+    )
+
+    if record_type == "MORNING" and record.get("end_time"):
+        title += f"｜{str(record['end_time'])[:5]} 下班"
+
+    elif record_type == "NIGHT" and record.get("start_time"):
+        title += f"｜{str(record['start_time'])[:5]} 上班"
+
+
+    with st.expander(title):
+
+        st.write(
+            f"日期：{record['request_date']}"
+        )
+
+        st.write(
+            f"類型：{request_type_display.get(record_type, record_type)}"
+        )
+
+        if record_type == "MORNING" and record.get("end_time"):
+            st.write(
+                f"提早下班：{str(record['end_time'])[:5]}"
+            )
+
+        if record_type == "NIGHT" and record.get("start_time"):
+            st.write(
+                f"延後上班：{str(record['start_time'])[:5]}"
+            )
+
+
+        if st.button(
+            "🗑️ 刪除這筆排假",
+            key=f"delete_leave_{record['id']}",
+            use_container_width=True,
+        ):
+
+            try:
+
+                supabase.table(
+                    "leave_requests"
+                ).delete().eq(
+                    "id",
+                    record["id"],
+                ).execute()
+
+                st.success("✅ 已刪除")
+                st.rerun()
+
+            except Exception as error:
+
+                st.error("❌ 刪除失敗")
+                st.exception(error)
+
+
+st.divider()
 
 # ============================================================
 # 基本常數
