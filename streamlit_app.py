@@ -1092,44 +1092,82 @@ if st.button(
 # ============================================================
 # 3. 營業時間
 # ============================================================
+# ============================================================
+# 從 Supabase 讀取營業時間
+# ============================================================
 
+try:
+    business_hours_response = (
+        supabase
+        .table("business_hours")
+        .select("*")
+        .eq("is_active", True)
+        .order("weekday")
+        .execute()
+    )
+
+    business_hours_rows = business_hours_response.data
+
+except Exception as error:
+    business_hours_rows = []
+    st.error("❌ 無法讀取營業時間設定")
+    st.exception(error)
+
+
+business_hours_map = {
+    int(row["weekday"]): row
+    for row in business_hours_rows
+}
 st.header("🕘 營業時間")
 
-col1, col2 = st.columns(2)
+# 週一～週日營業時間
+business_hours_ui = {}
 
-with col1:
-    st.subheader("週一～週五")
+day_settings = [
+    ("monday", "週一", 0, "09:00", "22:00"),
+    ("tuesday", "週二", 1, "09:00", "22:30"),
+    ("wednesday", "週三", 2, "09:00", "22:00"),
+    ("thursday", "週四", 3, "09:00", "22:00"),
+    ("friday", "週五", 4, "09:00", "22:00"),
+    ("saturday", "週六", 5, "09:00", "22:30"),
+    ("sunday", "週日", 6, "09:00", "22:30"),
+]
 
-    weekday_start = st.selectbox(
-        "開始營業",
-        TIME_OPTIONS,
-        index=TIME_OPTIONS.index("09:00"),
-        key="weekday_start",
-    )
+for day_key, day_name, weekday_num, fallback_start, fallback_end in day_settings:
 
-    weekday_end = st.selectbox(
-        "結束營業",
-        TIME_OPTIONS,
-        index=TIME_OPTIONS.index("22:00"),
-        key="weekday_end",
-    )
+    saved = business_hours_map.get(weekday_num)
 
-with col2:
-    st.subheader("週六、週日")
+    if saved:
+        default_start = str(saved["open_time"])[:5]
+        default_end = str(saved["close_time"])[:5]
+    else:
+        default_start = fallback_start
+        default_end = fallback_end
 
-    weekend_start = st.selectbox(
-        "開始營業 ",
-        TIME_OPTIONS,
-        index=TIME_OPTIONS.index("09:00"),
-        key="weekend_start",
-    )
+    st.subheader(day_name)
 
-    weekend_end = st.selectbox(
-        "結束營業 ",
-        TIME_OPTIONS,
-        index=TIME_OPTIONS.index("22:30"),
-        key="weekend_end",
-    )
+    col_start, col_end = st.columns(2)
+
+    with col_start:
+        day_start = st.selectbox(
+            "開始營業",
+            TIME_OPTIONS,
+            index=TIME_OPTIONS.index(default_start),
+            key=f"{day_key}_start",
+        )
+
+    with col_end:
+        day_end = st.selectbox(
+            "結束營業",
+            TIME_OPTIONS,
+            index=TIME_OPTIONS.index(default_end),
+            key=f"{day_key}_end",
+        )
+
+    business_hours_ui[day_key] = {
+        "start": day_start,
+        "end": day_end,
+    }
 
 
 # ============================================================
@@ -1164,12 +1202,56 @@ with col3:
         step=1,
     )
 
+saved_middle_start = "12:00"
+
+if business_hours_rows:
+    saved_middle_start = str(
+        business_hours_rows[0].get("middle_start") or "12:00"
+    )[:5]
+
+if saved_middle_start not in TIME_OPTIONS:
+    saved_middle_start = "12:00"
+
 middle_start = st.selectbox(
     "中班開始時間",
     TIME_OPTIONS,
-    index=TIME_OPTIONS.index("12:00"),
+    index=TIME_OPTIONS.index(saved_middle_start),
 )
+if st.button(
+    "💾 儲存營業時間",
+    key="save_business_hours",
+    use_container_width=True,
+):
+    try:
+        day_key_to_weekday = {
+            "monday": 0,
+            "tuesday": 1,
+            "wednesday": 2,
+            "thursday": 3,
+            "friday": 4,
+            "saturday": 5,
+            "sunday": 6,
+        }
 
+        for day_key, weekday_num in day_key_to_weekday.items():
+            day_data = business_hours_ui[day_key]
+
+            supabase.table("business_hours").update({
+                "open_time": day_data["start"],
+                "close_time": day_data["end"],
+                "middle_start": middle_start,
+                "is_active": True,
+            }).eq(
+                "weekday",
+                weekday_num,
+            ).execute()
+
+        st.success("✅ 營業時間已儲存")
+
+    except Exception as error:
+        st.error("❌ 儲存營業時間失敗")
+        st.exception(error)
+        
 with st.expander("班別時間規則"):
 
     st.write(
@@ -2115,22 +2197,7 @@ if st.button(
         "employees":
             employees,
 
-        "business_hours": {
-
-            "weekday": {
-                "start":
-                    weekday_start,
-                "end":
-                    weekday_end,
-            },
-
-            "weekend": {
-                "start":
-                    weekend_start,
-                "end":
-                    weekend_end,
-            },
-        },
+        "business_hours": business_hours_ui,
 
         "shifts": {
 
