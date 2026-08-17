@@ -1070,18 +1070,18 @@ def calculate_actual_shift_time(
         current_date
     )
 
-    # 平日 / 週末營業時間
-    if current.weekday() < 5:
+   # 依星期取得當天營業時間
+business_hours_by_weekday = [
+    request.business_hours.monday,
+    request.business_hours.tuesday,
+    request.business_hours.wednesday,
+    request.business_hours.thursday,
+    request.business_hours.friday,
+    request.business_hours.saturday,
+    request.business_hours.sunday,
+]
 
-        business = (
-            request.business_hours.weekday
-        )
-
-    else:
-
-        business = (
-            request.business_hours.weekend
-        )
+business = business_hours_by_weekday[current.weekday()]
 
     result = calculate_shift_time(
         shift=shift,
