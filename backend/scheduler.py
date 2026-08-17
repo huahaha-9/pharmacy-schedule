@@ -1065,23 +1065,22 @@ def calculate_actual_shift_time(
             "end_time": None,
             "hours": employee.hours_per_day,
         }
-
     current = date.fromisoformat(
         current_date
     )
 
-   # 依星期取得當天營業時間
-business_hours_by_weekday = [
-    request.business_hours.monday,
-    request.business_hours.tuesday,
-    request.business_hours.wednesday,
-    request.business_hours.thursday,
-    request.business_hours.friday,
-    request.business_hours.saturday,
-    request.business_hours.sunday,
-]
+    # 依星期取得當天營業時間
+    business_hours_by_weekday = [
+        request.business_hours.monday,
+        request.business_hours.tuesday,
+        request.business_hours.wednesday,
+        request.business_hours.thursday,
+        request.business_hours.friday,
+        request.business_hours.saturday,
+        request.business_hours.sunday,
+    ]
 
-business = business_hours_by_weekday[current.weekday()]
+    business = business_hours_by_weekday[current.weekday()]
 
     result = calculate_shift_time(
         shift=shift,
