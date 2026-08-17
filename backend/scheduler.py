@@ -208,34 +208,35 @@ def build_demand(
 
     demand = {}
 
+    demand_by_weekday = [
+        request.shifts.demand.monday,
+        request.shifts.demand.tuesday,
+        request.shifts.demand.wednesday,
+        request.shifts.demand.thursday,
+        request.shifts.demand.friday,
+        request.shifts.demand.saturday,
+        request.shifts.demand.sunday,
+    ]
+
     for current_date in dates:
+
+        current = date.fromisoformat(current_date)
+        day_demand = demand_by_weekday[current.weekday()]
 
         demand[
             current_date,
             MORNING
-        ] = request.shifts.demand.morning
+        ] = day_demand.morning
 
         demand[
             current_date,
             MIDDLE
-        ] = request.shifts.demand.middle
+        ] = day_demand.middle
 
         demand[
             current_date,
             NIGHT
-        ] = request.shifts.demand.night
-
-        meeting_count = 0
-
-        for meeting in request.meetings:
-
-            if meeting.date == current_date:
-                meeting_count += meeting.staff_count
-
-        demand[
-            current_date,
-            MEETING
-        ] = meeting_count
+        ] = day_demand.night
 
     return demand
 
