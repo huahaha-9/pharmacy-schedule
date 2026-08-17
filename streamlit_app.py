@@ -403,6 +403,80 @@ for record in my_requests:
 
 
 st.divider()
+# ============================================================
+# 同一天的排假
+# ============================================================
+
+st.subheader("👥 這一天還有誰排假？")
+
+check_date = st.date_input(
+    "查看日期",
+    value=leave_date,
+    min_value=min_leave_date,
+    max_value=max_leave_date,
+    key="check_same_day_date",
+)
+
+try:
+    same_day_response = (
+        supabase
+        .table("leave_requests")
+        .select("*")
+        .eq("request_date", check_date.isoformat())
+        .order("employee_id")
+        .execute()
+    )
+
+    same_day_requests = same_day_response.data
+
+except Exception as error:
+    same_day_requests = []
+    st.error("❌ 無法讀取當日排假")
+    st.exception(error)
+
+
+if not same_day_requests:
+
+    st.info("這一天目前沒有人排假。")
+
+else:
+
+    for item in same_day_requests:
+
+        person_name = employee_name_map.get(
+            item["employee_id"],
+            item["employee_id"],
+        )
+
+        type_text = request_type_display.get(
+            item["request_type"],
+            item["request_type"],
+        )
+
+        extra_text = ""
+
+        if (
+            item["request_type"] == "MORNING"
+            and item.get("end_time")
+        ):
+            extra_text = (
+                f"｜{str(item['end_time'])[:5]} 下班"
+            )
+
+        elif (
+            item["request_type"] == "NIGHT"
+            and item.get("start_time")
+        ):
+            extra_text = (
+                f"｜{str(item['start_time'])[:5]} 上班"
+            )
+
+        st.write(
+            f"👤 **{person_name}**｜{type_text}{extra_text}"
+        )
+
+
+st.divider()
 
 # ============================================================
 # 基本常數
