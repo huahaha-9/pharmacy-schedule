@@ -724,7 +724,7 @@ else:
                 st.write(
                     f"👤 {employee_name}｜{rule_text}"
                 )
-                        st.divider()
+        st.divider()
 
         # --------------------------------------------------------
         # 本週人力配置
@@ -732,7 +732,7 @@ else:
 
         st.markdown("### 👥 本週人力配置")
 
-                staffing_days = [
+        staffing_days = [
             (0, "週一"),
             (1, "週二"),
             (2, "週三"),
