@@ -530,83 +530,83 @@ else:
     
     with manager_tab2:
         st.subheader("📋 本週總結")
-    st.caption("快速確認本週排假、指定班與會議安排。")
-
-    summary_start = st.date_input(
-        "本週開始日期",
-        value=DEFAULT_START,
-        key="manager_summary_start",
-    )
-
-    summary_end = summary_start + timedelta(days=6)
-
-    st.info(
-        f"📅 查看期間：{summary_start} ～ {summary_end}"
-    )
-
-    # --------------------------------------------------------
-    # 本週員工排假 / 指定班
-    # --------------------------------------------------------
-
-    st.markdown("### 🏖️ 員工排假 / 指定班")
-
-    try:
-        summary_leave_response = (
-            supabase
-            .table("leave_requests")
-            .select("*")
-            .gte("request_date", summary_start.isoformat())
-            .lte("request_date", summary_end.isoformat())
-            .order("request_date")
-            .execute()
+        st.caption("快速確認本週排假、指定班與會議安排。")
+    
+        summary_start = st.date_input(
+            "本週開始日期",
+            value=DEFAULT_START,
+            key="manager_summary_start",
         )
-
-        summary_leave_requests = summary_leave_response.data
-
-    except Exception as error:
-        summary_leave_requests = []
-        st.error("❌ 無法讀取本週排假資料")
-        st.exception(error)
-
-    if not summary_leave_requests:
-        st.info("本週目前沒有員工排假或指定班。")
-
-    else:
-        for item in summary_leave_requests:
-
-            employee_name = employee_name_map.get(
-                item["employee_id"],
-                item["employee_id"],
+    
+        summary_end = summary_start + timedelta(days=6)
+    
+        st.info(
+            f"📅 查看期間：{summary_start} ～ {summary_end}"
+        )
+    
+        # --------------------------------------------------------
+        # 本週員工排假 / 指定班
+        # --------------------------------------------------------
+    
+        st.markdown("### 🏖️ 員工排假 / 指定班")
+    
+        try:
+            summary_leave_response = (
+                supabase
+                .table("leave_requests")
+                .select("*")
+                .gte("request_date", summary_start.isoformat())
+                .lte("request_date", summary_end.isoformat())
+                .order("request_date")
+                .execute()
             )
-
-            request_text = request_type_display.get(
-                item["request_type"],
-                item["request_type"],
-            )
-
-            extra_text = ""
-
-            if (
-                item["request_type"] == "MORNING"
-                and item.get("end_time")
-            ):
-                extra_text = (
-                    f"｜{str(item['end_time'])[:5]} 下班"
+    
+            summary_leave_requests = summary_leave_response.data
+    
+        except Exception as error:
+            summary_leave_requests = []
+            st.error("❌ 無法讀取本週排假資料")
+            st.exception(error)
+    
+        if not summary_leave_requests:
+            st.info("本週目前沒有員工排假或指定班。")
+    
+        else:
+            for item in summary_leave_requests:
+    
+                employee_name = employee_name_map.get(
+                    item["employee_id"],
+                    item["employee_id"],
                 )
-
-            elif (
-                item["request_type"] == "NIGHT"
-                and item.get("start_time")
-            ):
-                extra_text = (
-                    f"｜{str(item['start_time'])[:5]} 上班"
+    
+                request_text = request_type_display.get(
+                    item["request_type"],
+                    item["request_type"],
                 )
-
-            st.write(
-                f"📅 {item['request_date']}｜"
-                f"👤 {employee_name}｜"
-                f"{request_text}{extra_text}"
-            )
+    
+                extra_text = ""
+    
+                if (
+                    item["request_type"] == "MORNING"
+                    and item.get("end_time")
+                ):
+                    extra_text = (
+                        f"｜{str(item['end_time'])[:5]} 下班"
+                    )
+    
+                elif (
+                    item["request_type"] == "NIGHT"
+                    and item.get("start_time")
+                ):
+                    extra_text = (
+                        f"｜{str(item['start_time'])[:5]} 上班"
+                    )
+    
+                st.write(
+                    f"📅 {item['request_date']}｜"
+                    f"👤 {employee_name}｜"
+                    f"{request_text}{extra_text}"
+                )
     
     with manager_tab3:
         st.subheader("🧩 生成班表")
