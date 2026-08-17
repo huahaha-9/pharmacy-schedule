@@ -532,7 +532,11 @@ else:
         st.subheader("📋 本週總結")
         st.caption("快速確認本週排假、指定班與會議安排。")
     
-        summary_start = start_date
+        summary_start = st.date_input(
+    "本週開始日期",
+    value=DEFAULT_START,
+    key="manager_summary_start",
+)
     
         summary_end = summary_start + timedelta(days=6)
     
