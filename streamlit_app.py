@@ -1,9 +1,10 @@
+import copy
 import streamlit as st
 from datetime import date, timedelta
 from supabase import create_client
 
 from backend.models import ScheduleRequest
-from backend.scheduler import solve_schedule
+from backend.scheduler import solve_schedule, calculate_shift_time
 
 
 # ============================================================
@@ -753,22 +754,88 @@ else:
                         key=f"hours_{i}",
                     )
 
-                col6, col7 = st.columns(2)
+                st.markdown("**排班偏好**")
 
-                with col6:
-                    can_morning = st.checkbox(
-                        "可排早班",
-                        value=employee.get("can_morning", True),
-                        key=f"can_morning_{i}",
+                current_shift_prefs = {
+                    rule.get("shift")
+                    for rule in ss.preferred_shifts
+                    if rule.get("employee") == employee["id"]
+                    and rule.get("weekday") is None
+                }
+
+                pref_col1, pref_col2 = st.columns(2)
+                with pref_col1:
+                    prefer_morning = st.checkbox(
+                        "偏好早班",
+                        value="MORNING" in current_shift_prefs,
+                        key=f"prefer_morning_{i}",
+                    )
+                with pref_col2:
+                    prefer_night = st.checkbox(
+                        "偏好晚班",
+                        value="NIGHT" in current_shift_prefs,
+                        key=f"prefer_night_{i}",
                     )
 
-                with col7:
-                    can_night = st.checkbox(
-                        "可排晚班",
-                        value=employee.get("can_night", True),
-                        key=f"can_night_{i}",
+                current_off_days = sorted({
+                    int(rule["weekday"])
+                    for rule in ss.preferred_days_off
+                    if rule.get("employee") == employee["id"]
+                    and rule.get("weekday") is not None
+                })
+
+                preferred_off_names = st.multiselect(
+                    "偏好休星期（可複選）",
+                    WEEKDAY_NAMES,
+                    default=[
+                        WEEKDAY_NAMES[weekday]
+                        for weekday in current_off_days
+                        if 0 <= weekday <= 6
+                    ],
+                    key=f"preferred_off_days_{i}",
+                )
+
+                prefer_consecutive = st.checkbox(
+                    "偏好連休",
+                    value=employee["id"] in ss.consecutive_off,
+                    key=f"prefer_consecutive_{i}",
+                )
+
+                ss.preferred_shifts = [
+                    rule for rule in ss.preferred_shifts
+                    if not (
+                        rule.get("employee") == employee["id"]
+                        and rule.get("weekday") is None
                     )
-        
+                ]
+                for shift_code, enabled in [
+                    ("MORNING", prefer_morning),
+                    ("NIGHT", prefer_night),
+                ]:
+                    if enabled:
+                        ss.preferred_shifts.append({
+                            "employee": employee["id"],
+                            "shift": shift_code,
+                            "weekday": None,
+                        })
+
+                ss.preferred_days_off = [
+                    rule for rule in ss.preferred_days_off
+                    if rule.get("employee") != employee["id"]
+                ]
+                for weekday_name in preferred_off_names:
+                    ss.preferred_days_off.append({
+                        "employee": employee["id"],
+                        "weekday": WEEKDAY_MAP[weekday_name],
+                    })
+
+                ss.consecutive_off = [
+                    employee_id for employee_id in ss.consecutive_off
+                    if employee_id != employee["id"]
+                ]
+                if prefer_consecutive:
+                    ss.consecutive_off.append(employee["id"])
+
                 updated_employee = {
                     "id": employee["id"],
                     "name": name,
@@ -778,8 +845,8 @@ else:
                     "reducible": reducible,
                     "work_days": int(work_days),
                     "hours_per_day": float(hours_per_day),
-                    "can_morning": can_morning,
-                    "can_night": can_night,
+                    "can_morning": True,
+                    "can_night": True,
                     "preferred_shift": employee.get("preferred_shift"),
                     "prefer_consecutive_off": employee.get("prefer_consecutive_off", False),
                 }
@@ -1446,7 +1513,7 @@ if not st.session_state.manager_logged_in:
 
 with manager_tab2:
     st.divider()
-    with st.expander("📣 會議設定", expanded=False):
+    with st.expander("📣 會議｜＋新增 / 修改", expanded=True):
         # ============================================================
         # 5. 會議
         # ============================================================
@@ -1786,221 +1853,10 @@ with manager_tab1:
     # 9. 排班偏好
     # ============================================================
 
-    st.header("⭐ 排班偏好")
+    st.header("👥 其他排班規則")
+    st.caption("員工個人的班別、休假星期與連休偏好，已整合到上方員工資料卡。")
 
 
-    # ============================================================
-    # 9-1 偏好班別
-    # ============================================================
-
-    st.subheader("偏好班別")
-
-    preferred_shift_delete = None
-
-    for i, rule in enumerate(
-        ss.preferred_shifts
-    ):
-
-        with st.expander(
-            f"偏好班別 {i + 1}",
-            expanded=False,
-        ):
-
-            pref_employee = st.selectbox(
-                "人員",
-                employee_ids,
-                index=safe_index(
-                    employee_ids,
-                    rule["employee"],
-                ),
-                key=f"pref_employee_{i}",
-            )
-
-            pref_shift_values = [
-                "MORNING",
-                "MIDDLE",
-                "NIGHT",
-            ]
-
-            pref_shift_labels = [
-                "早班",
-                "中班",
-                "晚班",
-            ]
-
-            pref_shift_label = st.selectbox(
-                "偏好班別",
-                pref_shift_labels,
-                index=safe_index(
-                    pref_shift_values,
-                    rule["shift"],
-                ),
-                key=f"pref_shift_{i}",
-            )
-
-            use_weekday = st.checkbox(
-                "限定星期",
-                value=(
-                    rule.get("weekday")
-                    is not None
-                ),
-                key=f"pref_use_weekday_{i}",
-            )
-
-            weekday = None
-
-            if use_weekday:
-
-                default_weekday = (
-                    rule["weekday"]
-                    if rule.get("weekday")
-                    is not None
-                    else 0
-                )
-
-                weekday_name = st.selectbox(
-                    "星期",
-                    WEEKDAY_NAMES,
-                    index=int(default_weekday),
-                    key=f"pref_weekday_{i}",
-                )
-
-                weekday = WEEKDAY_MAP[
-                    weekday_name
-                ]
-
-            ss.preferred_shifts[i] = {
-                "employee": pref_employee,
-                "shift": SHIFT_OPTIONS[
-                    pref_shift_label
-                ],
-                "weekday": weekday,
-            }
-
-            if st.button(
-                "🗑️ 刪除此偏好",
-                key=f"delete_pref_shift_{i}",
-            ):
-                preferred_shift_delete = i
-
-
-    if preferred_shift_delete is not None:
-
-        ss.preferred_shifts.pop(
-            preferred_shift_delete
-        )
-
-        st.rerun()
-
-
-    if st.button(
-        "＋ 新增偏好班別",
-        key="add_pref_shift",
-    ):
-
-        ss.preferred_shifts.append({
-            "employee": employee_ids[0],
-            "shift": "MORNING",
-            "weekday": None,
-        })
-
-        st.rerun()
-
-
-    # ============================================================
-    # 9-2 偏好休假星期
-    # ============================================================
-
-    st.subheader("偏好休假星期")
-
-    preferred_off_delete = None
-
-    for i, rule in enumerate(
-        ss.preferred_days_off
-    ):
-
-        with st.expander(
-            f"偏好休假 {i + 1}",
-            expanded=False,
-        ):
-
-            pref_off_employee = st.selectbox(
-                "人員",
-                employee_ids,
-                index=safe_index(
-                    employee_ids,
-                    rule["employee"],
-                ),
-                key=f"pref_off_employee_{i}",
-            )
-
-            pref_off_weekday = st.selectbox(
-                "偏好休星期",
-                WEEKDAY_NAMES,
-                index=int(
-                    rule["weekday"]
-                ),
-                key=f"pref_off_weekday_{i}",
-            )
-
-            ss.preferred_days_off[i] = {
-                "employee": pref_off_employee,
-                "weekday": WEEKDAY_MAP[
-                    pref_off_weekday
-                ],
-            }
-
-            if st.button(
-                "🗑️ 刪除此偏好",
-                key=f"delete_pref_off_{i}",
-            ):
-                preferred_off_delete = i
-
-
-    if preferred_off_delete is not None:
-
-        ss.preferred_days_off.pop(
-            preferred_off_delete
-        )
-
-        st.rerun()
-
-
-    if st.button(
-        "＋ 新增偏好休假",
-        key="add_pref_off",
-    ):
-
-        ss.preferred_days_off.append({
-            "employee": employee_ids[0],
-            "weekday": 0,
-        })
-
-        st.rerun()
-
-
-    # ============================================================
-    # 9-3 偏好連休
-    # ============================================================
-
-    st.subheader("偏好連休")
-
-    selected_consecutive = st.multiselect(
-        "偏好連續休假的人員",
-        employee_ids,
-        default=[
-            employee
-            for employee in ss.consecutive_off
-            if employee in employee_ids
-        ],
-    )
-
-    ss.consecutive_off = (
-        selected_consecutive
-    )
-
-
-    # ============================================================
     # 9-4 兩人避免同班
     # ============================================================
 
@@ -2531,6 +2387,16 @@ with manager_tab3:
 
                 ss.schedule_result = result
 
+                if result.get("success"):
+                    ss.manual_schedule = copy.deepcopy(
+                        result.get("schedule", [])
+                    )
+                    ss.schedule_requirements = {
+                        weekday_num: dict(values)
+                        for weekday_num, values
+                        in weekly_staffing_for_schedule.items()
+                    }
+
             except Exception as error:
 
                 st.error(
@@ -2599,9 +2465,9 @@ with manager_tab3:
 
             schedule_rows = []
 
-            schedule_data = result.get(
-                "schedule",
-                [],
+            schedule_data = ss.get(
+                "manual_schedule",
+                result.get("schedule", []),
             )
 
 
@@ -2742,59 +2608,228 @@ with manager_tab3:
 
 
             # ====================================================
-            # 11-2 個人統計
+            # 11-2 店長單日修改班表
             # ====================================================
 
             if schedule_data:
-
-                st.subheader(
-                    "👥 個人出勤統計"
+                st.subheader("✏️ 單日修改班表")
+                st.caption(
+                    "七天總表維持濃縮顯示；需要調整時再選一天修改。"
+                    "固定休假與員工指定班會鎖定，避免誤改。"
                 )
 
-                summary_rows = []
+                schedule_dates = [
+                    day["date"]
+                    for day in schedule_data[0].get("days", [])
+                ]
 
-                for employee_result in schedule_data:
-
-                    employee_name = (
-                        employee_result.get(
-                            "name"
-                        )
-                        or employee_result.get(
-                            "employee"
-                        )
-                        or employee_result.get(
-                            "id"
-                        )
-                        or "未知"
+                if schedule_dates:
+                    edit_date_value = st.selectbox(
+                        "選擇要修改的日期",
+                        schedule_dates,
+                        format_func=lambda value: (
+                            date.fromisoformat(value).strftime("%m/%d")
+                            + "（"
+                            + WEEKDAY_NAMES[
+                                date.fromisoformat(value).weekday()
+                            ]
+                            + "）"
+                        ),
+                        key="manual_edit_date",
                     )
 
-                    summary_rows.append({
-                        "人員":
-                            employee_name,
+                    try:
+                        manual_fixed_response = (
+                            supabase
+                            .table("employee_fixed_rules")
+                            .select("*")
+                            .execute()
+                        )
+                        manual_fixed_rules = manual_fixed_response.data or []
+                    except Exception:
+                        manual_fixed_rules = []
 
-                        "上班天數":
-                            employee_result.get(
-                                "work_days",
-                                "",
+                    try:
+                        manual_leave_response = (
+                            supabase
+                            .table("leave_requests")
+                            .select("*")
+                            .eq("request_date", edit_date_value)
+                            .execute()
+                        )
+                        manual_leave_rules = manual_leave_response.data or []
+                    except Exception:
+                        manual_leave_rules = []
+
+                    fixed_shift_by_employee = {
+                        rule["employee_id"]: rule["shift"]
+                        for rule in manual_fixed_rules
+                        if rule.get("rule_type") == "FIXED_SHIFT"
+                    }
+                    fixed_off_employees = {
+                        rule["employee_id"]
+                        for rule in manual_fixed_rules
+                        if (
+                            rule.get("rule_type") == "FIXED_OFF"
+                            and rule.get("weekday") is not None
+                            and int(rule["weekday"])
+                            == date.fromisoformat(edit_date_value).weekday()
+                        )
+                    }
+                    assigned_by_employee = {
+                        rule["employee_id"]: rule["request_type"]
+                        for rule in manual_leave_rules
+                    }
+                    employee_lookup = {
+                        employee["id"]: employee
+                        for employee in employees
+                    }
+
+                    for employee_result in schedule_data:
+                        employee_id = employee_result.get("employee_id")
+                        employee_name = (
+                            employee_result.get("name") or employee_id
+                        )
+                        day_result = next(
+                            (
+                                day
+                                for day in employee_result.get("days", [])
+                                if day.get("date") == edit_date_value
                             ),
+                            None,
+                        )
+                        if not day_result:
+                            continue
 
-                        "總工時":
-                            employee_result.get(
-                                "total_hours",
-                                "",
-                            ),
-                    })
+                        current_shift = day_result.get("shift", "OFF")
+                        locked_reason = None
+                        allowed_options = ["OFF", "MORNING", "MIDDLE", "NIGHT"]
 
+                        if employee_id in assigned_by_employee:
+                            locked_reason = "員工指定排假 / 指定班"
+                            allowed_options = [assigned_by_employee[employee_id]]
+                        elif employee_id in fixed_off_employees:
+                            locked_reason = "固定休假"
+                            allowed_options = ["OFF"]
+                        elif employee_id in fixed_shift_by_employee:
+                            locked_reason = "固定班"
+                            allowed_options = [
+                                "OFF",
+                                fixed_shift_by_employee[employee_id],
+                            ]
+
+                        if current_shift not in allowed_options:
+                            allowed_options = [current_shift] + allowed_options
+
+                        col_name, col_shift = st.columns([2, 3])
+                        with col_name:
+                            prefix = "🔒 " if locked_reason else ""
+                            suffix = f"｜{locked_reason}" if locked_reason else ""
+                            st.write(f"{prefix}**{employee_name}**{suffix}")
+
+                        with col_shift:
+                            selected_shift = st.selectbox(
+                                "班別",
+                                allowed_options,
+                                index=allowed_options.index(current_shift),
+                                format_func=lambda code: SHIFT_DISPLAY.get(code, code),
+                                key=f"manual_shift_{employee_id}_{edit_date_value}",
+                                label_visibility="collapsed",
+                                disabled=locked_reason in {
+                                    "員工指定排假 / 指定班",
+                                    "固定休假",
+                                },
+                            )
+
+                        if (
+                            selected_shift != current_shift
+                            and locked_reason not in {
+                                "員工指定排假 / 指定班",
+                                "固定休假",
+                            }
+                        ):
+                            employee_info = employee_lookup.get(employee_id)
+                            if employee_info:
+                                day_key = [
+                                    "monday", "tuesday", "wednesday",
+                                    "thursday", "friday", "saturday", "sunday",
+                                ][date.fromisoformat(edit_date_value).weekday()]
+                                business = business_hours_ui[day_key]
+                                recalculated = calculate_shift_time(
+                                    shift=selected_shift,
+                                    business_start=business["start"],
+                                    business_end=business["end"],
+                                    middle_start=middle_start,
+                                    hours_per_day=float(
+                                        employee_info["hours_per_day"]
+                                    ),
+                                )
+                                day_result["shift"] = selected_shift
+                                day_result["start_time"] = recalculated["start_time"]
+                                day_result["end_time"] = recalculated["end_time"]
+                                day_result["hours"] = recalculated["hours"]
+
+                    # 每次 rerun 都以目前手動班表重新計算總工時與上班天數。
+                    for employee_result in schedule_data:
+                        employee_result["total_hours"] = sum(
+                            float(day.get("hours", 0) or 0)
+                            for day in employee_result.get("days", [])
+                        )
+                        employee_result["work_days"] = sum(
+                            1
+                            for day in employee_result.get("days", [])
+                            if day.get("shift") != "OFF"
+                        )
+
+                    ss.manual_schedule = schedule_data
+
+            # ====================================================
+            # 11-3 每日人力：實際 / 需求
+            # ====================================================
+
+            if schedule_data:
+                st.subheader("👥 每日人力（實際 / 需求）")
+
+                requirements = ss.get("schedule_requirements", {})
+                headcount_rows = []
+
+                for weekday_num in range(7):
+                    current_day = start_date + timedelta(days=weekday_num)
+                    day_date = current_day.isoformat()
+                    row = {"日期": current_day.strftime("%m/%d")}
+
+                    for shift_code, label, req_key in [
+                        ("MORNING", "早", "morning"),
+                        ("MIDDLE", "中", "middle"),
+                        ("NIGHT", "晚", "night"),
+                    ]:
+                        actual = sum(
+                            1
+                            for employee_result in schedule_data
+                            for day in employee_result.get("days", [])
+                            if (
+                                day.get("date") == day_date
+                                and day.get("shift") == shift_code
+                            )
+                        )
+                        required = int(
+                            requirements.get(weekday_num, {}).get(req_key, 0)
+                        )
+                        row[label] = (
+                            f"{actual}/{required}"
+                            + (" ⚠️" if actual < required else "")
+                        )
+
+                    headcount_rows.append(row)
 
                 st.dataframe(
-                    summary_rows,
+                    headcount_rows,
                     use_container_width=True,
                     hide_index=True,
                 )
 
-
             # ====================================================
-            # 11-3 人力不足
+            # 11-4 原始求解人力不足
             # ====================================================
 
             deficits = result.get(
