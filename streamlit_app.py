@@ -184,6 +184,19 @@ if "consecutive_off" not in ss:
 if "different_shift" not in ss:
     ss.different_shift = []
 
+# 共用顯示對照：員工端與店長端都會使用
+employee_name_map = {
+    employee["id"]: employee["name"]
+    for employee in ss.employees
+}
+
+request_type_display = {
+    "OFF": "休假",
+    "MORNING": "早班",
+    "MIDDLE": "中班",
+    "NIGHT": "晚班",
+}
+
 
 # ============================================================
 # 員工排假
@@ -2421,6 +2434,39 @@ if st.button(
             ),
         }
 
+    # ========================================================
+    # 從 Supabase 讀取固定班 / 固定休假，作為 solver 唯一資料來源
+    # ========================================================
+    try:
+        solver_fixed_rules_response = (
+            supabase
+            .table("employee_fixed_rules")
+            .select("*")
+            .order("employee_id")
+            .execute()
+        )
+        solver_fixed_rules = solver_fixed_rules_response.data
+    except Exception as error:
+        solver_fixed_rules = []
+        errors.append(f"無法讀取固定班 / 固定休假：{error}")
+
+    fixed_shifts_payload = []
+    fixed_days_off_payload = []
+
+    for rule in solver_fixed_rules:
+        if rule.get("rule_type") == "FIXED_SHIFT":
+            if rule.get("shift") in {"MORNING", "MIDDLE", "NIGHT"}:
+                fixed_shifts_payload.append({
+                    "employee": rule["employee_id"],
+                    "shift": rule["shift"],
+                })
+        elif rule.get("rule_type") == "FIXED_OFF":
+            if rule.get("weekday") is not None:
+                fixed_days_off_payload.append({
+                    "employee": rule["employee_id"],
+                    "weekday": int(rule["weekday"]),
+                })
+
     payload = {
 
         "start_date":
@@ -2480,11 +2526,9 @@ if st.button(
         "meetings":
             meetings_payload,
 
-        "fixed_shifts":
-            ss.fixed_shifts,
+        "fixed_shifts": fixed_shifts_payload,
 
-        "fixed_days_off":
-            ss.fixed_days_off,
+        "fixed_days_off": fixed_days_off_payload,
 
         "assignments":
             assignments_payload,
