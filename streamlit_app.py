@@ -168,6 +168,422 @@ def time_to_minutes(value):
     hour, minute = map(int, value.split(":"))
     return hour * 60 + minute
 
+
+def diagnose_infeasible_inputs(
+    employees,
+    start_date,
+    end_date,
+    staffing,
+    fixed_shifts,
+    fixed_days_off,
+    assignments,
+):
+    """針對已知硬限制做可讀性診斷；不修改 solver。"""
+    reasons = []
+    employee_map = {
+        employee["id"]: employee
+        for employee in employees
+    }
+    employee_name = {
+        employee["id"]: employee["name"]
+        for employee in employees
+    }
+
+    dates = [
+        start_date + timedelta(days=offset)
+        for offset in range((end_date - start_date).days + 1)
+    ]
+
+    fixed_shift_map = {
+        rule["employee"]: rule["shift"]
+        for rule in fixed_shifts
+    }
+
+    fixed_off_map = {}
+    for rule in fixed_days_off:
+        fixed_off_map.setdefault(
+            rule["employee"],
+            set(),
+        ).add(int(rule["weekday"]))
+
+    assignment_map = {}
+    for rule in assignments:
+        assignment_map[
+            (
+                rule["employee"],
+                rule["date"],
+            )
+        ] = rule["shift"]
+
+    # 1. 不可減班員工：可排日期不足以達到固定上班天數
+    for employee in employees:
+        if employee.get("reducible"):
+            continue
+
+        forced_off_dates = set()
+
+        for current_date in dates:
+            date_text = current_date.isoformat()
+
+            if (
+                current_date.weekday()
+                in fixed_off_map.get(employee["id"], set())
+            ):
+                forced_off_dates.add(date_text)
+
+            if assignment_map.get(
+                (employee["id"], date_text)
+            ) == "OFF":
+                forced_off_dates.add(date_text)
+
+        available_days = len(dates) - len(forced_off_dates)
+        required_days = int(employee.get("work_days", 0) or 0)
+
+        if available_days < required_days:
+            reasons.append(
+                f"{employee['name']} 本週設定必須上 {required_days} 天，"
+                f"但固定休假 / 排假後最多只剩 {available_days} 天可排。"
+            )
+
+    # 2. 固定班和指定班 / 會議互撞
+    for rule in assignments:
+        employee_id = rule["employee"]
+        forced_shift = fixed_shift_map.get(employee_id)
+
+        if (
+            forced_shift
+            and rule["shift"] not in {"OFF", forced_shift}
+        ):
+            reasons.append(
+                f"{employee_name.get(employee_id, employee_id)} "
+                f"{rule['date']} 設定固定"
+                f"{SHIFT_DISPLAY.get(forced_shift, forced_shift)}，"
+                f"但又指定"
+                f"{SHIFT_DISPLAY.get(rule['shift'], rule['shift'])}。"
+            )
+
+        try:
+            assignment_date = date.fromisoformat(rule["date"])
+        except Exception:
+            assignment_date = None
+
+        if (
+            assignment_date
+            and assignment_date.weekday()
+            in fixed_off_map.get(employee_id, set())
+            and rule["shift"] != "OFF"
+        ):
+            reasons.append(
+                f"{employee_name.get(employee_id, employee_id)} "
+                f"{rule['date']} 是固定休假，"
+                f"但又指定"
+                f"{SHIFT_DISPLAY.get(rule['shift'], rule['shift'])}。"
+            )
+
+    # 3. 被硬指定成「晚接早」
+    for employee_id in employee_map:
+        for idx in range(len(dates) - 1):
+            today = dates[idx].isoformat()
+            tomorrow = dates[idx + 1].isoformat()
+
+            if (
+                assignment_map.get((employee_id, today)) == "NIGHT"
+                and assignment_map.get((employee_id, tomorrow))
+                == "MORNING"
+            ):
+                reasons.append(
+                    f"{employee_name.get(employee_id, employee_id)} "
+                    f"{today} 被指定晚班、{tomorrow} 又被指定早班，"
+                    "違反晚班不能接隔日早班。"
+                )
+
+    # 4. 早 / 晚班只要有需求，就至少要有一位 FT 可合法排入
+    full_time_ids = [
+        employee["id"]
+        for employee in employees
+        if employee.get("employee_type") == "FT"
+    ]
+
+    weekday_keys = [
+        "monday", "tuesday", "wednesday",
+        "thursday", "friday", "saturday", "sunday",
+    ]
+
+    for current_date in dates:
+        weekday_num = current_date.weekday()
+        date_text = current_date.isoformat()
+        demand_row = staffing.get(weekday_num, {})
+
+        for shift_code, demand_key, display_name in [
+            ("MORNING", "morning", "早班"),
+            ("NIGHT", "night", "晚班"),
+        ]:
+            if int(demand_row.get(demand_key, 0) or 0) <= 0:
+                continue
+
+            candidates = []
+
+            for employee_id in full_time_ids:
+                assigned = assignment_map.get(
+                    (employee_id, date_text)
+                )
+                fixed_shift = fixed_shift_map.get(employee_id)
+                fixed_off = (
+                    weekday_num
+                    in fixed_off_map.get(employee_id, set())
+                )
+
+                if fixed_off:
+                    continue
+
+                if assigned == "OFF":
+                    continue
+
+                if assigned and assigned != shift_code:
+                    continue
+
+                if fixed_shift and fixed_shift != shift_code:
+                    continue
+
+                candidates.append(employee_id)
+
+            if not candidates:
+                reasons.append(
+                    f"{date_text} {display_name}有需求，"
+                    "但沒有任何 FT 員工能合法排入。"
+                )
+
+    # 去重
+    unique_reasons = []
+    for reason in reasons:
+        if reason not in unique_reasons:
+            unique_reasons.append(reason)
+
+    if not unique_reasons:
+        unique_reasons.append(
+            "目前沒有找到單一明確衝突。較可能是多個硬限制組合後"
+            "造成無解，例如固定上班天數、固定班 / 休假、"
+            "指定班與晚接早同時壓縮可排組合。"
+        )
+
+    return unique_reasons
+
+
+def audit_schedule(
+    schedule,
+    preferred_shifts,
+    preferred_days_off,
+    consecutive_off,
+    different_shift,
+    previous_schedule=None,
+):
+    """歷史班表檢核：七休一、晚接早、偏好滿足程度。"""
+    previous_schedule = previous_schedule or []
+    combined = {}
+
+    for source_schedule in [previous_schedule, schedule]:
+        for employee_result in source_schedule:
+            employee_id = employee_result.get("employee_id")
+            if not employee_id:
+                continue
+
+            combined.setdefault(
+                employee_id,
+                {
+                    "name": employee_result.get("name", employee_id),
+                    "days": {},
+                },
+            )
+
+            for day in employee_result.get("days", []):
+                combined[employee_id]["days"][day["date"]] = day
+
+    seven_day_violations = []
+    night_to_morning = []
+
+    for employee_id, employee_data in combined.items():
+        ordered_days = sorted(
+            employee_data["days"].values(),
+            key=lambda item: item["date"],
+        )
+
+        work_run = 0
+        last_date = None
+        last_shift = None
+
+        for day in ordered_days:
+            current_date = date.fromisoformat(day["date"])
+
+            if (
+                last_date is not None
+                and (current_date - last_date).days != 1
+            ):
+                work_run = 0
+                last_shift = None
+
+            shift = day.get("shift", "OFF")
+
+            if shift == "OFF":
+                work_run = 0
+            else:
+                work_run += 1
+
+            if work_run >= 7:
+                seven_day_violations.append(
+                    f"{employee_data['name']} 在 {day['date']} "
+                    "形成連續 7 天以上上班。"
+                )
+
+            if (
+                last_shift == "NIGHT"
+                and shift == "MORNING"
+                and last_date is not None
+                and (current_date - last_date).days == 1
+            ):
+                night_to_morning.append(
+                    f"{employee_data['name']}："
+                    f"{last_date.isoformat()} 晚班 → "
+                    f"{day['date']} 早班"
+                )
+
+            last_date = current_date
+            last_shift = shift
+
+    # 偏好班別
+    preferred_shift_map = {}
+    for rule in preferred_shifts:
+        preferred_shift_map.setdefault(
+            rule.get("employee"),
+            set(),
+        ).add(rule.get("shift"))
+
+    shift_pref_total = 0
+    shift_pref_met = 0
+
+    for employee_result in schedule:
+        employee_id = employee_result.get("employee_id")
+        wanted = preferred_shift_map.get(employee_id, set())
+
+        if not wanted:
+            continue
+
+        for day in employee_result.get("days", []):
+            if day.get("shift") in {
+                "MORNING", "MIDDLE", "NIGHT"
+            }:
+                shift_pref_total += 1
+                if day.get("shift") in wanted:
+                    shift_pref_met += 1
+
+    # 偏好休星期
+    preferred_off_map = {}
+    for rule in preferred_days_off:
+        preferred_off_map.setdefault(
+            rule.get("employee"),
+            set(),
+        ).add(int(rule.get("weekday")))
+
+    off_pref_total = 0
+    off_pref_met = 0
+
+    for employee_result in schedule:
+        employee_id = employee_result.get("employee_id")
+        wanted_days = preferred_off_map.get(employee_id, set())
+
+        if not wanted_days:
+            continue
+
+        for day in employee_result.get("days", []):
+            if date.fromisoformat(day["date"]).weekday() in wanted_days:
+                off_pref_total += 1
+                if day.get("shift") == "OFF":
+                    off_pref_met += 1
+
+    # 偏好連休
+    consecutive_total = 0
+    consecutive_met = 0
+
+    for employee_result in schedule:
+        employee_id = employee_result.get("employee_id")
+
+        if employee_id not in consecutive_off:
+            continue
+
+        consecutive_total += 1
+        ordered = sorted(
+            employee_result.get("days", []),
+            key=lambda item: item["date"],
+        )
+
+        has_consecutive_off = any(
+            ordered[index].get("shift") == "OFF"
+            and ordered[index + 1].get("shift") == "OFF"
+            for index in range(len(ordered) - 1)
+        )
+
+        if has_consecutive_off:
+            consecutive_met += 1
+
+    # 避免同班
+    different_total = 0
+    different_met = 0
+
+    schedule_by_employee = {
+        employee_result.get("employee_id"): {
+            day["date"]: day.get("shift")
+            for day in employee_result.get("days", [])
+        }
+        for employee_result in schedule
+    }
+
+    for rule in different_shift:
+        pair = rule.get("employees", [])
+        if len(pair) != 2:
+            continue
+
+        employee_a, employee_b = pair
+        dates_a = schedule_by_employee.get(employee_a, {})
+        dates_b = schedule_by_employee.get(employee_b, {})
+
+        for date_text in set(dates_a) & set(dates_b):
+            shift_a = dates_a[date_text]
+            shift_b = dates_b[date_text]
+
+            if (
+                shift_a in {"MORNING", "MIDDLE", "NIGHT"}
+                and shift_b in {"MORNING", "MIDDLE", "NIGHT"}
+            ):
+                different_total += 1
+                if shift_a != shift_b:
+                    different_met += 1
+
+    total_opportunities = (
+        shift_pref_total
+        + off_pref_total
+        + consecutive_total
+        + different_total
+    )
+    total_met = (
+        shift_pref_met
+        + off_pref_met
+        + consecutive_met
+        + different_met
+    )
+
+    preference_percent = (
+        round(total_met / total_opportunities * 100, 1)
+        if total_opportunities
+        else 100.0
+    )
+
+    return {
+        "preference_percent": preference_percent,
+        "preference_met": total_met,
+        "preference_total": total_opportunities,
+        "seven_day_violations": seven_day_violations,
+        "night_to_morning": night_to_morning,
+    }
+
 # ============================================================
 # Session State 初始化
 # ============================================================
@@ -2657,6 +3073,24 @@ with manager_tab3:
 
             try:
 
+                ss.last_schedule_inputs = {
+                    "employees": copy.deepcopy(employees),
+                    "start_date": start_date.isoformat(),
+                    "end_date": end_date.isoformat(),
+                    "staffing": copy.deepcopy(
+                        weekly_staffing_for_schedule
+                    ),
+                    "fixed_shifts": copy.deepcopy(
+                        fixed_shifts_payload
+                    ),
+                    "fixed_days_off": copy.deepcopy(
+                        fixed_days_off_payload
+                    ),
+                    "assignments": copy.deepcopy(
+                        assignments_payload
+                    ),
+                }
+
                 request = ScheduleRequest(
                     **payload
                 )
@@ -2724,6 +3158,34 @@ with manager_tab3:
             st.warning(
                 "可以檢查固定班、固定休假、排假、會議或每週上班天數是否互相衝突。"
             )
+
+            last_inputs = ss.get("last_schedule_inputs")
+
+            if last_inputs:
+                st.markdown("### 🔎 無解原因診斷")
+
+                diagnostic_reasons = diagnose_infeasible_inputs(
+                    employees=last_inputs["employees"],
+                    start_date=date.fromisoformat(
+                        last_inputs["start_date"]
+                    ),
+                    end_date=date.fromisoformat(
+                        last_inputs["end_date"]
+                    ),
+                    staffing=last_inputs["staffing"],
+                    fixed_shifts=last_inputs["fixed_shifts"],
+                    fixed_days_off=last_inputs["fixed_days_off"],
+                    assignments=last_inputs["assignments"],
+                )
+
+                for reason in diagnostic_reasons:
+                    st.write(f"• {reason}")
+
+                st.caption(
+                    "這是依目前硬限制做的可讀性診斷。"
+                    "OR-Tools 的 INFEASIBLE 本身不一定能指出唯一一條原因，"
+                    "所以若沒有單一衝突，會提示最可能的限制組合。"
+                )
 
 
         # ========================================================
@@ -3240,4 +3702,318 @@ with manager_tab3:
             )
 
     st.markdown("### 📚 歷史班表")
-    st.caption("歷史班表將保留最近 2 週，並用於跨週七休一、晚接早與偏好檢核。")
+    st.caption(
+        "正式儲存後保留最近 2 週。歷史檢核包含偏好滿足程度、"
+        "七休一與跨週晚接早。"
+    )
+
+    history_table_available = True
+
+    try:
+        history_response = (
+            supabase.table("schedule_history")
+            .select("*")
+            .order("week_start", desc=True)
+            .limit(10)
+            .execute()
+        )
+        history_rows = history_response.data or []
+    except Exception:
+        history_table_available = False
+        history_rows = []
+
+    if "schedule_result" in ss and ss.schedule_result.get("success"):
+        current_schedule_for_history = ss.get(
+            "manual_schedule",
+            ss.schedule_result.get("schedule", []),
+        )
+
+        if st.button(
+            "✅ 確認並正式儲存本週班表",
+            key=f"save_official_schedule_{start_date.isoformat()}",
+            use_container_width=True,
+            type="primary",
+        ):
+            if not history_table_available:
+                st.error(
+                    "❌ 尚未建立 schedule_history 資料表。"
+                    "請先執行我提供的 schedule_history_setup.sql。"
+                )
+            else:
+                try:
+                    previous_history_response = (
+                        supabase.table("schedule_history")
+                        .select("week_start,week_end,schedule_json")
+                        .lt("week_start", start_date.isoformat())
+                        .order("week_start", desc=True)
+                        .limit(1)
+                        .execute()
+                    )
+
+                    previous_schedule = []
+
+                    if previous_history_response.data:
+                        previous_row = previous_history_response.data[0]
+
+                        if (
+                            date.fromisoformat(
+                                previous_row["week_end"]
+                            )
+                            + timedelta(days=1)
+                            == start_date
+                        ):
+                            previous_schedule = (
+                                previous_row.get("schedule_json")
+                                or []
+                            )
+
+                    audit_result = audit_schedule(
+                        schedule=current_schedule_for_history,
+                        preferred_shifts=ss.preferred_shifts,
+                        preferred_days_off=ss.preferred_days_off,
+                        consecutive_off=ss.consecutive_off,
+                        different_shift=ss.different_shift,
+                        previous_schedule=previous_schedule,
+                    )
+
+                    requirements_for_history = ss.get(
+                        "schedule_requirements",
+                        {},
+                    )
+
+                    current_deficits = []
+
+                    for weekday_num in range(7):
+                        current_day = (
+                            start_date
+                            + timedelta(days=weekday_num)
+                        )
+                        day_text = current_day.isoformat()
+
+                        for shift_code, req_key in [
+                            ("MORNING", "morning"),
+                            ("MIDDLE", "middle"),
+                            ("NIGHT", "night"),
+                        ]:
+                            actual = sum(
+                                1
+                                for employee_result
+                                in current_schedule_for_history
+                                for day
+                                in employee_result.get("days", [])
+                                if (
+                                    day.get("date") == day_text
+                                    and day.get("shift")
+                                    == shift_code
+                                )
+                            )
+
+                            required = int(
+                                requirements_for_history
+                                .get(weekday_num, {})
+                                .get(req_key, 0)
+                            )
+
+                            if actual < required:
+                                current_deficits.append({
+                                    "date": day_text,
+                                    "shift": shift_code,
+                                    "deficit": required - actual,
+                                })
+
+                    official_actual_hours = sum(
+                        float(day.get("hours", 0) or 0)
+                        for employee_result
+                        in current_schedule_for_history
+                        for day
+                        in employee_result.get("days", [])
+                        if day.get("shift")
+                        in {"MORNING", "MIDDLE", "NIGHT"}
+                    )
+
+                    supabase.table("schedule_history").upsert(
+                        {
+                            "week_start": start_date.isoformat(),
+                            "week_end": end_date.isoformat(),
+                            "schedule_json": current_schedule_for_history,
+                            "audit_json": audit_result,
+                            "deficits_json": current_deficits,
+                            "recommended_total_hours": float(
+                                weekly_recommended_total_hours
+                            ),
+                            "actual_total_hours": float(
+                                official_actual_hours
+                            ),
+                        },
+                        on_conflict="week_start",
+                    ).execute()
+
+                    # 只保留最近兩週
+                    saved_rows = (
+                        supabase.table("schedule_history")
+                        .select("week_start")
+                        .order("week_start", desc=True)
+                        .execute()
+                    ).data or []
+
+                    for old_row in saved_rows[2:]:
+                        supabase.table("schedule_history").delete().eq(
+                            "week_start",
+                            old_row["week_start"],
+                        ).execute()
+
+                    st.success("✅ 本週班表已正式儲存")
+                    st.rerun()
+
+                except Exception as error:
+                    st.error("❌ 正式儲存班表失敗")
+                    st.exception(error)
+
+    if history_table_available:
+        history_rows = (
+            supabase.table("schedule_history")
+            .select("*")
+            .order("week_start", desc=True)
+            .limit(2)
+            .execute()
+        ).data or []
+
+        if not history_rows:
+            st.info("目前沒有正式歷史班表。")
+
+        for history_row in history_rows:
+            audit = history_row.get("audit_json") or {}
+            week_start_text = history_row["week_start"]
+            week_end_text = history_row["week_end"]
+
+            with st.expander(
+                f"📅 {week_start_text} ～ {week_end_text}",
+                expanded=False,
+            ):
+                col_a, col_b, col_c = st.columns(3)
+
+                with col_a:
+                    st.metric(
+                        "偏好滿足",
+                        f"{float(audit.get('preference_percent', 100)):.1f}%",
+                    )
+
+                with col_b:
+                    st.metric(
+                        "建議總工時",
+                        f"{float(history_row.get('recommended_total_hours', 0)):.1f}",
+                    )
+
+                with col_c:
+                    st.metric(
+                        "實際總工時",
+                        f"{float(history_row.get('actual_total_hours', 0)):.1f}",
+                    )
+
+                seven_day = audit.get(
+                    "seven_day_violations",
+                    [],
+                )
+                night_morning = audit.get(
+                    "night_to_morning",
+                    [],
+                )
+
+                if seven_day:
+                    st.error("⚠️ 七休一檢核異常")
+                    for item in seven_day:
+                        st.write(f"• {item}")
+                else:
+                    st.success("✅ 七休一檢核通過")
+
+                if night_morning:
+                    st.error("⚠️ 晚接早檢核異常")
+                    for item in night_morning:
+                        st.write(f"• {item}")
+                else:
+                    st.success("✅ 晚接早檢核通過")
+
+                historical_schedule = (
+                    history_row.get("schedule_json")
+                    or []
+                )
+
+                history_table_rows = []
+
+                for employee_result in historical_schedule:
+                    row = {
+                        "人員": employee_result.get(
+                            "name",
+                            employee_result.get("employee_id"),
+                        )
+                    }
+
+                    for day in employee_result.get("days", []):
+                        day_date = date.fromisoformat(day["date"])
+                        shift = day.get("shift", "OFF")
+
+                        if shift == "OFF":
+                            display = "休假"
+                        elif shift == "MEETING":
+                            display = "會議"
+                        else:
+                            display = (
+                                f"{SHIFT_DISPLAY.get(shift, shift)} "
+                                f"{day.get('start_time') or ''}-"
+                                f"{day.get('end_time') or ''}"
+                            ).strip("-")
+
+                        row[
+                            day_date.strftime("%m/%d")
+                        ] = display
+
+                    row["總工時"] = employee_result.get(
+                        "total_hours",
+                        0,
+                    )
+                    history_table_rows.append(row)
+
+                st.dataframe(
+                    history_table_rows,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+                if st.button(
+                    "🗑️ 刪除此週歷史班表",
+                    key=f"delete_history_{week_start_text}",
+                    use_container_width=True,
+                ):
+                    supabase.table("schedule_history").delete().eq(
+                        "week_start",
+                        week_start_text,
+                    ).execute()
+                    st.success("✅ 歷史班表已刪除")
+                    st.rerun()
+
+        if history_rows:
+            with st.expander("⚠️ 清除測試歷史資料", expanded=False):
+                confirm_clear_history = st.checkbox(
+                    "我確認要清除全部歷史班表",
+                    key="confirm_clear_all_history",
+                )
+
+                if st.button(
+                    "🗑️ 清空全部歷史班表",
+                    key="clear_all_history",
+                    disabled=not confirm_clear_history,
+                    use_container_width=True,
+                ):
+                    for history_row in history_rows:
+                        supabase.table("schedule_history").delete().eq(
+                            "week_start",
+                            history_row["week_start"],
+                        ).execute()
+
+                    st.success("✅ 歷史班表已清空")
+                    st.rerun()
+    else:
+        st.info(
+            "歷史班表功能尚未建立資料表。"
+            "執行 schedule_history_setup.sql 後即可使用。"
+        )
