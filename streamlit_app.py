@@ -90,6 +90,90 @@ st.caption("設定人員、營業時間與排班條件後，自動產生一週�
 if "manager_logged_in" not in st.session_state:
     st.session_state.manager_logged_in = False
 
+# ============================================================
+# 共用常數 / 工具
+# ============================================================
+
+TIME_OPTIONS = [
+    f"{hour:02d}:{minute:02d}"
+    for hour in range(24)
+    for minute in (0, 30)
+]
+
+SHIFT_OPTIONS = {
+    "休假": "OFF",
+    "早班": "MORNING",
+    "中班": "MIDDLE",
+    "晚班": "NIGHT",
+    "會議": "MEETING",
+}
+
+SHIFT_DISPLAY = {
+    "OFF": "休假",
+    "MORNING": "早班",
+    "MIDDLE": "中班",
+    "NIGHT": "晚班",
+    "MEETING": "會議",
+}
+
+WEEKDAY_NAMES = [
+    "週一",
+    "週二",
+    "週三",
+    "週四",
+    "週五",
+    "週六",
+    "週日",
+]
+
+WEEKDAY_MAP = {
+    name: index
+    for index, name in enumerate(WEEKDAY_NAMES)
+}
+
+def safe_index(options, value, default=0):
+    try:
+        return options.index(value)
+    except ValueError:
+        return default
+
+def time_to_minutes(value):
+    hour, minute = map(int, value.split(":"))
+    return hour * 60 + minute
+
+# ============================================================
+# Session State 初始化
+# ============================================================
+
+ss = st.session_state
+
+if "employees" not in ss:
+    ss.employees = load_employees()
+
+if "meetings" not in ss:
+    ss.meetings = []
+
+if "fixed_shifts" not in ss:
+    ss.fixed_shifts = []
+
+if "fixed_days_off" not in ss:
+    ss.fixed_days_off = []
+
+if "assignments" not in ss:
+    ss.assignments = []
+
+if "preferred_shifts" not in ss:
+    ss.preferred_shifts = []
+
+if "preferred_days_off" not in ss:
+    ss.preferred_days_off = []
+
+if "consecutive_off" not in ss:
+    ss.consecutive_off = []
+
+if "different_shift" not in ss:
+    ss.different_shift = []
+
 
 # ============================================================
 # 員工排假
@@ -277,113 +361,113 @@ if not st.session_state.manager_logged_in:
                 st.write(
                     f"延後上班：{str(record['start_time'])[:5]}"
                 )
-                st.markdown("#### ✏️ 修改排假")
-    
-                edit_date = st.date_input(
-                    "修改日期",
-                    value=date.fromisoformat(record["request_date"]),
-                    min_value=min_leave_date,
-                    max_value=max_leave_date,
-                    key=f"edit_date_{record['id']}",
+            st.markdown("#### ✏️ 修改排假")
+
+            edit_date = st.date_input(
+                "修改日期",
+                value=date.fromisoformat(record["request_date"]),
+                min_value=min_leave_date,
+                max_value=max_leave_date,
+                key=f"edit_date_{record['id']}",
+            )
+            
+            edit_options = [
+                "休假",
+                "指定早班",
+                "指定中班",
+                "指定晚班",
+            ]
+            
+            code_to_label = {
+                "OFF": "休假",
+                "MORNING": "指定早班",
+                "MIDDLE": "指定中班",
+                "NIGHT": "指定晚班",
+            }
+            
+            edit_label = st.selectbox(
+                "修改排假 / 指定班",
+                edit_options,
+                index=edit_options.index(
+                    code_to_label.get(record_type, "休假")
+                ),
+                key=f"edit_type_{record['id']}",
+            )
+            
+            edit_type = request_type_map[edit_label]
+            
+            edit_start_time = None
+            edit_end_time = None
+            
+            if edit_type == "MORNING":
+            
+                old_end_time = (
+                    str(record["end_time"])[:5]
+                    if record.get("end_time")
+                    else "15:00"
                 )
-                
-                edit_options = [
-                    "休假",
-                    "指定早班",
-                    "指定中班",
-                    "指定晚班",
-                ]
-                
-                code_to_label = {
-                    "OFF": "休假",
-                    "MORNING": "指定早班",
-                    "MIDDLE": "指定中班",
-                    "NIGHT": "指定晚班",
-                }
-                
-                edit_label = st.selectbox(
-                    "修改排假 / 指定班",
-                    edit_options,
-                    index=edit_options.index(
-                        code_to_label.get(record_type, "休假")
-                    ),
-                    key=f"edit_type_{record['id']}",
+            
+                use_early_end = st.checkbox(
+                    "提早下班",
+                    value=record.get("end_time") is not None,
+                    key=f"edit_early_{record['id']}",
                 )
-                
-                edit_type = request_type_map[edit_label]
-                
-                edit_start_time = None
-                edit_end_time = None
-                
-                if edit_type == "MORNING":
-                
-                    old_end_time = (
-                        str(record["end_time"])[:5]
-                        if record.get("end_time")
-                        else "15:00"
+            
+                if use_early_end:
+                    edit_end_time = st.selectbox(
+                        "新的下班時間",
+                        half_hour_options,
+                        index=half_hour_options.index(old_end_time),
+                        key=f"edit_end_{record['id']}",
                     )
-                
-                    use_early_end = st.checkbox(
-                        "提早下班",
-                        value=record.get("end_time") is not None,
-                        key=f"edit_early_{record['id']}",
+            
+            elif edit_type == "NIGHT":
+            
+                old_start_time = (
+                    str(record["start_time"])[:5]
+                    if record.get("start_time")
+                    else "18:00"
+                )
+            
+                use_late_start = st.checkbox(
+                    "延後上班",
+                    value=record.get("start_time") is not None,
+                    key=f"edit_late_{record['id']}",
+                )
+            
+                if use_late_start:
+                    edit_start_time = st.selectbox(
+                        "新的上班時間",
+                        half_hour_options,
+                        index=half_hour_options.index(old_start_time),
+                        key=f"edit_start_{record['id']}",
                     )
-                
-                    if use_early_end:
-                        edit_end_time = st.selectbox(
-                            "新的下班時間",
-                            half_hour_options,
-                            index=half_hour_options.index(old_end_time),
-                            key=f"edit_end_{record['id']}",
-                        )
-                
-                elif edit_type == "NIGHT":
-                
-                    old_start_time = (
-                        str(record["start_time"])[:5]
-                        if record.get("start_time")
-                        else "18:00"
-                    )
-                
-                    use_late_start = st.checkbox(
-                        "延後上班",
-                        value=record.get("start_time") is not None,
-                        key=f"edit_late_{record['id']}",
-                    )
-                
-                    if use_late_start:
-                        edit_start_time = st.selectbox(
-                            "新的上班時間",
-                            half_hour_options,
-                            index=half_hour_options.index(old_start_time),
-                            key=f"edit_start_{record['id']}",
-                        )
-                
-                if st.button(
-                    "💾 儲存修改",
-                    key=f"save_edit_{record['id']}",
-                    use_container_width=True,
-                ):
-                    try:
-                
-                        supabase.table(
-                            "leave_requests"
-                        ).update({
-                            "request_date": edit_date.isoformat(),
-                            "request_type": edit_type,
-                            "start_time": edit_start_time,
-                            "end_time": edit_end_time,
-                        }).eq(
-                            "id",
-                            record["id"],
-                        ).execute()
-                
-                        st.success("✅ 修改完成")
-                        st.rerun()
-                
-                    except Exception as error:
-                        st.error("❌ 修改失敗")
-                        st.exception(error)
+            
+            if st.button(
+                "💾 儲存修改",
+                key=f"save_edit_{record['id']}",
+                use_container_width=True,
+            ):
+                try:
+            
+                    supabase.table(
+                        "leave_requests"
+                    ).update({
+                        "request_date": edit_date.isoformat(),
+                        "request_type": edit_type,
+                        "start_time": edit_start_time,
+                        "end_time": edit_end_time,
+                    }).eq(
+                        "id",
+                        record["id"],
+                    ).execute()
+            
+                    st.success("✅ 修改完成")
+                    st.rerun()
+            
+                except Exception as error:
+                    st.error("❌ 修改失敗")
+                    st.exception(error)
     
     
             if st.button(
@@ -633,6 +717,22 @@ else:
                         step=0.5,
                         key=f"hours_{i}",
                     )
+
+                col6, col7 = st.columns(2)
+
+                with col6:
+                    can_morning = st.checkbox(
+                        "可排早班",
+                        value=employee.get("can_morning", True),
+                        key=f"can_morning_{i}",
+                    )
+
+                with col7:
+                    can_night = st.checkbox(
+                        "可排晚班",
+                        value=employee.get("can_night", True),
+                        key=f"can_night_{i}",
+                    )
         
                 updated_employee = {
                     "id": employee["id"],
@@ -643,6 +743,10 @@ else:
                     "reducible": reducible,
                     "work_days": int(work_days),
                     "hours_per_day": float(hours_per_day),
+                    "can_morning": can_morning,
+                    "can_night": can_night,
+                    "preferred_shift": employee.get("preferred_shift"),
+                    "prefer_consecutive_off": employee.get("prefer_consecutive_off", False),
                 }
         
                 employees.append(updated_employee)
@@ -1300,224 +1404,6 @@ else:
         st.subheader("🧩 生成班表")
 if not st.session_state.manager_logged_in:
     st.stop()
-# ============================================================
-# 基本常數
-# ============================================================
-
-TIME_OPTIONS = [
-    f"{hour:02d}:{minute:02d}"
-    for hour in range(24)
-    for minute in (0, 30)
-]
-
-SHIFT_OPTIONS = {
-    "休假": "OFF",
-    "早班": "MORNING",
-    "中班": "MIDDLE",
-    "晚班": "NIGHT",
-    "會議": "MEETING",
-}
-
-SHIFT_DISPLAY = {
-    "OFF": "休假",
-    "MORNING": "早班",
-    "MIDDLE": "中班",
-    "NIGHT": "晚班",
-    "MEETING": "會議",
-}
-
-WEEKDAY_NAMES = [
-    "週一",
-    "週二",
-    "週三",
-    "週四",
-    "週五",
-    "週六",
-    "週日",
-]
-
-WEEKDAY_MAP = {
-    name: index
-    for index, name in enumerate(WEEKDAY_NAMES)
-}
-
-
-def safe_index(options, value, default=0):
-    try:
-        return options.index(value)
-    except ValueError:
-        return default
-
-
-def time_to_minutes(value):
-    hour, minute = map(int, value.split(":"))
-    return hour * 60 + minute
-
-
-# ============================================================
-# 預設排班週
-# ============================================================
-
-today = date.today()
-
-DEFAULT_START = (
-    today
-    - timedelta(days=today.weekday())
-)
-
-
-# ============================================================
-# 預設員工
-# ============================================================
-
-DEFAULT_EMPLOYEES = [
-    {
-        "id": "F1",
-        "name": "F1",
-        "employee_type": "FT",
-        "is_pharmacist": True,
-        "is_senior": True,
-        "reducible": False,
-        "work_days": 5,
-        "hours_per_day": 8.0,
-    },
-    {
-        "id": "F2",
-        "name": "F2",
-        "employee_type": "FT",
-        "is_pharmacist": True,
-        "is_senior": True,
-        "reducible": False,
-        "work_days": 5,
-        "hours_per_day": 8.0,
-    },
-    {
-        "id": "F3",
-        "name": "F3",
-        "employee_type": "FT",
-        "is_pharmacist": False,
-        "is_senior": True,
-        "reducible": False,
-        "work_days": 5,
-        "hours_per_day": 8.0,
-    },
-    {
-        "id": "F4",
-        "name": "F4",
-        "employee_type": "FT",
-        "is_pharmacist": False,
-        "is_senior": False,
-        "reducible": False,
-        "work_days": 5,
-        "hours_per_day": 8.0,
-    },
-    {
-        "id": "P1",
-        "name": "P1",
-        "employee_type": "PT",
-        "is_pharmacist": False,
-        "is_senior": True,
-        "reducible": True,
-        "work_days": 4,
-        "hours_per_day": 7.0,
-    },
-    {
-        "id": "P2",
-        "name": "P2",
-        "employee_type": "PT",
-        "is_pharmacist": False,
-        "is_senior": True,
-        "reducible": True,
-        "work_days": 4,
-        "hours_per_day": 7.0,
-    },
-    {
-        "id": "P3",
-        "name": "P3",
-        "employee_type": "PT",
-        "is_pharmacist": False,
-        "is_senior": False,
-        "reducible": False,
-        "work_days": 4,
-        "hours_per_day": 7.0,
-    },
-    {
-        "id": "P4",
-        "name": "P4",
-        "employee_type": "PT",
-        "is_pharmacist": False,
-        "is_senior": False,
-        "reducible": False,
-        "work_days": 4,
-        "hours_per_day": 7.0,
-    },
-    {
-        "id": "P5",
-        "name": "P5",
-        "employee_type": "PT",
-        "is_pharmacist": False,
-        "is_senior": False,
-        "reducible": False,
-        "work_days": 4,
-        "hours_per_day": 7.0,
-    },
-]
-
-
-# ============================================================
-# Session State 初始化
-# ============================================================
-
-ss = st.session_state
-
-if "employees" not in ss:
-    ss.employees = load_employees()
-
-if "meetings" not in ss:
-    ss.meetings = []
-
-if "fixed_shifts" not in ss:
-    ss.fixed_shifts = [
-        {
-            "employee": "P3",
-            "shift": "NIGHT",
-        }
-    ]
-
-if "fixed_days_off" not in ss:
-    ss.fixed_days_off = [
-        {
-            "employee": "P4",
-            "weekday": 6,
-        }
-    ]
-
-if "assignments" not in ss:
-    ss.assignments = []
-
-if "preferred_shifts" not in ss:
-    ss.preferred_shifts = []
-
-if "preferred_days_off" not in ss:
-    ss.preferred_days_off = []
-
-if "consecutive_off" not in ss:
-    ss.consecutive_off = ["P1"]
-
-if "different_shift" not in ss:
-    ss.different_shift = [
-        {
-            "employees": ["P3", "P4"]
-        }
-    ]
-
-
-
-
-        
-
-
-
 # ============================================================
 # 5. 會議
 # ============================================================
