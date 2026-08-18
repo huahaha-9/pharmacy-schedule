@@ -100,6 +100,16 @@ TIME_OPTIONS = [
     for minute in (0, 30)
 ]
 
+EARLY_LEAVE_OPTIONS = [
+    f"{minutes // 60:02d}:{minutes % 60:02d}"
+    for minutes in range(11 * 60, 16 * 60 + 31, 30)
+]
+
+LATE_START_OPTIONS = [
+    f"{minutes // 60:02d}:{minutes % 60:02d}"
+    for minutes in range(14 * 60 + 30, 19 * 60 + 1, 30)
+]
+
 SHIFT_OPTIONS = {
     "休假": "OFF",
     "早班": "MORNING",
@@ -197,7 +207,7 @@ if not st.session_state.manager_logged_in:
         key="leave_employee_id",
     )
     
-    min_leave_date = date.today() + timedelta(days=10)
+    min_leave_date = date.today() + timedelta(days=15)
     max_leave_date = date.today() + timedelta(days=183)
     
     leave_date = st.date_input(
@@ -246,8 +256,8 @@ if not st.session_state.manager_logged_in:
         if use_early_leave:
             end_time_value = st.selectbox(
                 "提早下班時間",
-                options=half_hour_options,
-                index=half_hour_options.index("15:00"),
+                options=EARLY_LEAVE_OPTIONS,
+                index=EARLY_LEAVE_OPTIONS.index("15:00"),
                 key="leave_end_time",
             )
     
@@ -260,8 +270,8 @@ if not st.session_state.manager_logged_in:
         if use_late_start:
             start_time_value = st.selectbox(
                 "延後上班時間",
-                options=half_hour_options,
-                index=half_hour_options.index("18:00"),
+                options=LATE_START_OPTIONS,
+                index=LATE_START_OPTIONS.index("18:00"),
                 key="leave_start_time",
             )
     
@@ -416,8 +426,8 @@ if not st.session_state.manager_logged_in:
                 if use_early_end:
                     edit_end_time = st.selectbox(
                         "新的下班時間",
-                        half_hour_options,
-                        index=half_hour_options.index(old_end_time),
+                        EARLY_LEAVE_OPTIONS,
+                        index=safe_index(EARLY_LEAVE_OPTIONS, old_end_time, EARLY_LEAVE_OPTIONS.index("15:00")),
                         key=f"edit_end_{record['id']}",
                     )
             
@@ -438,8 +448,8 @@ if not st.session_state.manager_logged_in:
                 if use_late_start:
                     edit_start_time = st.selectbox(
                         "新的上班時間",
-                        half_hour_options,
-                        index=half_hour_options.index(old_start_time),
+                        LATE_START_OPTIONS,
+                        index=safe_index(LATE_START_OPTIONS, old_start_time, LATE_START_OPTIONS.index("18:00")),
                         key=f"edit_start_{record['id']}",
                     )
             
@@ -1725,9 +1735,9 @@ for i, rule in enumerate(
 
                 end_time = st.selectbox(
                     "下班時間",
-                    TIME_OPTIONS,
+                    EARLY_LEAVE_OPTIONS,
                     index=safe_index(
-                        TIME_OPTIONS,
+                        EARLY_LEAVE_OPTIONS,
                         default_end,
                     ),
                     key=f"morning_end_{i}",
@@ -1757,9 +1767,9 @@ for i, rule in enumerate(
 
                 start_time = st.selectbox(
                     "上班時間",
-                    TIME_OPTIONS,
+                    LATE_START_OPTIONS,
                     index=safe_index(
-                        TIME_OPTIONS,
+                        LATE_START_OPTIONS,
                         default_start_time,
                     ),
                     key=f"night_start_{i}",
@@ -2241,6 +2251,37 @@ if st.button(
 
     seen_assignments = set()
 
+    # 員工端已儲存在 Supabase 的排假／指定班，直接帶入本週排班模型
+    try:
+        leave_response_for_schedule = (
+            supabase
+            .table("leave_requests")
+            .select("*")
+            .gte("request_date", start_date.isoformat())
+            .lte("request_date", end_date.isoformat())
+            .order("request_date")
+            .execute()
+        )
+        leave_rows_for_schedule = leave_response_for_schedule.data or []
+    except Exception as error:
+        leave_rows_for_schedule = []
+        errors.append(f"無法讀取本週員工排假資料：{error}")
+
+    for row in leave_rows_for_schedule:
+        row_date = date.fromisoformat(row["request_date"])
+        assignment_key = (row["employee_id"], row_date)
+        if assignment_key in seen_assignments:
+            continue
+        seen_assignments.add(assignment_key)
+        assignments_payload.append({
+            "employee": row["employee_id"],
+            "date": row["request_date"],
+            "shift": row["request_type"],
+            "start_time": (str(row["start_time"])[:5] if row.get("start_time") else None),
+            "end_time": (str(row["end_time"])[:5] if row.get("end_time") else None),
+        })
+
+    # 店長在本頁手動新增的設定也一起送入；若與員工排假撞同人同日則提示
     for rule in ss.assignments:
 
         rule_date = rule["date"]
