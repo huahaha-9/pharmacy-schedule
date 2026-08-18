@@ -223,7 +223,6 @@ if not st.session_state.manager_logged_in:
         [
             "休假",
             "指定早班",
-            "指定中班",
             "指定晚班",
         ],
         key="leave_request_type",
@@ -232,7 +231,6 @@ if not st.session_state.manager_logged_in:
     request_type_map = {
         "休假": "OFF",
         "指定早班": "MORNING",
-        "指定中班": "MIDDLE",
         "指定晚班": "NIGHT",
     }
     
@@ -373,34 +371,42 @@ if not st.session_state.manager_logged_in:
                 )
             st.markdown("#### ✏️ 修改排假")
 
+            original_request_date = date.fromisoformat(record["request_date"])
+
+            # 舊紀錄可能早於目前「15 天後」的可排假範圍。
+            # 為了讓舊紀錄仍能正常顯示與編輯，date_input 先允許顯示原日期；
+            # 真正儲存時再限制：日期若有更動，必須落在 15 天後～半年內。
+            edit_input_min = min(original_request_date, min_leave_date)
+            edit_input_max = max(original_request_date, max_leave_date)
+
             edit_date = st.date_input(
                 "修改日期",
-                value=date.fromisoformat(record["request_date"]),
-                min_value=min_leave_date,
-                max_value=max_leave_date,
+                value=original_request_date,
+                min_value=edit_input_min,
+                max_value=edit_input_max,
                 key=f"edit_date_{record['id']}",
             )
             
             edit_options = [
                 "休假",
                 "指定早班",
-                "指定中班",
                 "指定晚班",
             ]
             
             code_to_label = {
                 "OFF": "休假",
                 "MORNING": "指定早班",
-                "MIDDLE": "指定中班",
                 "NIGHT": "指定晚班",
             }
+
+            current_edit_label = code_to_label.get(record_type, "休假")
+            if record_type == "MIDDLE":
+                st.caption("此筆為舊的指定中班紀錄；指定中班已停用，如需修改請改選休假、指定早班或指定晚班。")
             
             edit_label = st.selectbox(
                 "修改排假 / 指定班",
                 edit_options,
-                index=edit_options.index(
-                    code_to_label.get(record_type, "休假")
-                ),
+                index=edit_options.index(current_edit_label),
                 key=f"edit_type_{record['id']}",
             )
             
@@ -459,6 +465,12 @@ if not st.session_state.manager_logged_in:
                 use_container_width=True,
             ):
                 try:
+                    if (
+                        edit_date != original_request_date
+                        and not (min_leave_date <= edit_date <= max_leave_date)
+                    ):
+                        st.error("修改日期必須選在 15 天後到半年內。")
+                        st.stop()
             
                     supabase.table(
                         "leave_requests"
@@ -1661,7 +1673,6 @@ assignment_delete = None
 ASSIGNMENT_SHIFT_LABELS = [
     "休假",
     "早班",
-    "中班",
     "晚班",
 ]
 
