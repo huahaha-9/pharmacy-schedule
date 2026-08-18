@@ -1439,1372 +1439,1171 @@ else:
         st.subheader("🧩 生成班表")
 if not st.session_state.manager_logged_in:
     st.stop()
-# ============================================================
-# 5. 會議
-# ============================================================
-
-st.header("📣 會議")
-
-st.caption(
-    "會議算上班。選擇日期與參加會議的人員。"
-)
-
-meeting_delete = None
-
-for i, meeting in enumerate(ss.meetings):
-
-    with st.expander(
-        f"會議 {i + 1}",
-        expanded=True,
-    ):
-
-        meeting_date = st.date_input(
-            "日期",
-            value=meeting["date"],
-            key=f"meeting_date_{i}",
-        )
-
-        meeting_employee = st.selectbox(
-            "會議人員",
-            employee_ids,
-            index=safe_index(
-                employee_ids,
-                meeting["employee"],
-            ),
-            key=f"meeting_employee_{i}",
-        )
-
-        ss.meetings[i] = {
-            "date": meeting_date,
-            "employee": meeting_employee,
-        }
-
-        if st.button(
-            "🗑️ 刪除此會議",
-            key=f"delete_meeting_{i}",
-        ):
-            meeting_delete = i
-
-
-if meeting_delete is not None:
-
-    ss.meetings.pop(meeting_delete)
-
-    st.rerun()
-
-
-if st.button(
-    "＋ 新增會議",
-    key="add_meeting",
-):
-
-    ss.meetings.append({
-        "date": start_date,
-        "employee": employee_ids[0],
-    })
-
-    st.rerun()
-
 
 # ============================================================
-# 6. 固定班
+# 店長三大區塊（舊 UI 已收回對應 Tab）
 # ============================================================
 
-st.header("🔒 固定班")
-
-st.caption(
-    "固定班代表：這位員工如果上班，只能排指定班別，但仍可以正常休假。"
-)
-
-fixed_shift_delete = None
-
-for i, rule in enumerate(
-    ss.fixed_shifts
-):
-
-    with st.expander(
-        f"固定班 {i + 1}",
-        expanded=True,
-    ):
-
-        fixed_employee = st.selectbox(
-            "人員",
-            employee_ids,
-            index=safe_index(
-                employee_ids,
-                rule["employee"],
-            ),
-            key=f"fixed_employee_{i}",
-        )
-
-        fixed_shift_values = [
-            "MORNING",
-            "MIDDLE",
-            "NIGHT",
-        ]
-
-        fixed_shift_labels = [
-            "早班",
-            "中班",
-            "晚班",
-        ]
-
-        current_shift_index = safe_index(
-            fixed_shift_values,
-            rule["shift"],
-        )
-
-        fixed_shift_label = st.selectbox(
-            "固定班別",
-            fixed_shift_labels,
-            index=current_shift_index,
-            key=f"fixed_shift_{i}",
-        )
-
-        fixed_shift_code = SHIFT_OPTIONS[
-            fixed_shift_label
-        ]
-
-        ss.fixed_shifts[i] = {
-            "employee": fixed_employee,
-            "shift": fixed_shift_code,
-        }
-
-        if st.button(
-            "🗑️ 刪除此固定班",
-            key=f"delete_fixed_shift_{i}",
-        ):
-            fixed_shift_delete = i
-
-
-if fixed_shift_delete is not None:
-
-    ss.fixed_shifts.pop(
-        fixed_shift_delete
-    )
-
-    st.rerun()
-
-
-if st.button(
-    "＋ 新增固定班",
-    key="add_fixed_shift",
-):
-
-    ss.fixed_shifts.append({
-        "employee": employee_ids[0],
-        "shift": "MORNING",
-    })
-
-    st.rerun()
-
-
-# ============================================================
-# 7. 固定休假
-# ============================================================
-
-st.header("🏖️ 固定休假")
-
-st.caption(
-    "例如：P4 固定週日休假。"
-)
-
-fixed_off_delete = None
-
-for i, rule in enumerate(
-    ss.fixed_days_off
-):
-
-    with st.expander(
-        f"固定休假 {i + 1}",
-        expanded=True,
-    ):
-
-        fixed_off_employee = st.selectbox(
-            "人員",
-            employee_ids,
-            index=safe_index(
-                employee_ids,
-                rule["employee"],
-            ),
-            key=f"fixed_off_employee_{i}",
-        )
-
-        fixed_off_weekday = st.selectbox(
-            "固定休星期",
-            WEEKDAY_NAMES,
-            index=int(rule["weekday"]),
-            key=f"fixed_off_weekday_{i}",
-        )
-
-        ss.fixed_days_off[i] = {
-            "employee": fixed_off_employee,
-            "weekday": WEEKDAY_MAP[
-                fixed_off_weekday
-            ],
-        }
-
-        if st.button(
-            "🗑️ 刪除此固定休假",
-            key=f"delete_fixed_off_{i}",
-        ):
-            fixed_off_delete = i
-
-
-if fixed_off_delete is not None:
-
-    ss.fixed_days_off.pop(
-        fixed_off_delete
-    )
-
-    st.rerun()
-
-
-if st.button(
-    "＋ 新增固定休假",
-    key="add_fixed_off",
-):
-
-    ss.fixed_days_off.append({
-        "employee": employee_ids[0],
-        "weekday": 0,
-    })
-
-    st.rerun()
-    # ============================================================
-# 8. 排假 / 指定班
-# ============================================================
-
-st.header("📆 排假／指定班")
-
-st.caption(
-    "休假不用設定時間；早班可指定提早下班；晚班可指定較晚上班。時間以 30 分鐘為單位。"
-)
-
-assignment_delete = None
-
-ASSIGNMENT_SHIFT_LABELS = [
-    "休假",
-    "早班",
-    "晚班",
-]
-
-for i, rule in enumerate(
-    ss.assignments
-):
-
-    with st.expander(
-        f"排假／指定班 {i + 1}",
-        expanded=False,
-    ):
-
-        assignment_employee = st.selectbox(
-            "人員",
-            employee_ids,
-            index=safe_index(
-                employee_ids,
-                rule["employee"],
-            ),
-            key=f"assignment_employee_{i}",
-        )
-
-        assignment_date = st.date_input(
-            "日期",
-            value=rule["date"],
-            key=f"assignment_date_{i}",
-        )
-
-        current_shift_label = SHIFT_DISPLAY[
-            rule["shift"]
-        ]
-
-        assignment_shift_label = st.selectbox(
-            "班別",
-            ASSIGNMENT_SHIFT_LABELS,
-            index=safe_index(
-                ASSIGNMENT_SHIFT_LABELS,
-                current_shift_label,
-            ),
-            key=f"assignment_shift_{i}",
-        )
-
-        assignment_shift_code = SHIFT_OPTIONS[
-            assignment_shift_label
-        ]
-
-        start_time = None
-        end_time = None
-
-        # ----------------------------------------------------
-        # 早班：可指定提早下班
-        # ----------------------------------------------------
-
-        if assignment_shift_code == "MORNING":
-
-            use_early_end = st.checkbox(
-                "指定提早下班",
-                value=(
-                    rule.get("end_time")
-                    is not None
-                ),
-                key=f"use_early_end_{i}",
-            )
-
-            if use_early_end:
-
-                default_end = (
-                    rule.get("end_time")
-                    or "15:00"
-                )
-
-                end_time = st.selectbox(
-                    "下班時間",
-                    EARLY_LEAVE_OPTIONS,
-                    index=safe_index(
-                        EARLY_LEAVE_OPTIONS,
-                        default_end,
-                    ),
-                    key=f"morning_end_{i}",
-                )
-
-        # ----------------------------------------------------
-        # 晚班：可指定較晚上班
-        # ----------------------------------------------------
-
-        elif assignment_shift_code == "NIGHT":
-
-            use_late_start = st.checkbox(
-                "指定較晚上班",
-                value=(
-                    rule.get("start_time")
-                    is not None
-                ),
-                key=f"use_late_start_{i}",
-            )
-
-            if use_late_start:
-
-                default_start_time = (
-                    rule.get("start_time")
-                    or "18:00"
-                )
-
-                start_time = st.selectbox(
-                    "上班時間",
-                    LATE_START_OPTIONS,
-                    index=safe_index(
-                        LATE_START_OPTIONS,
-                        default_start_time,
-                    ),
-                    key=f"night_start_{i}",
-                )
-
-        ss.assignments[i] = {
-            "employee": assignment_employee,
-            "date": assignment_date,
-            "shift": assignment_shift_code,
-            "start_time": start_time,
-            "end_time": end_time,
-        }
-
-        if st.button(
-            "🗑️ 刪除此設定",
-            key=f"delete_assignment_{i}",
-        ):
-            assignment_delete = i
-
-
-if assignment_delete is not None:
-
-    ss.assignments.pop(
-        assignment_delete
-    )
-
-    st.rerun()
-
-
-if st.button(
-    "＋ 新增排假／指定班",
-    key="add_assignment",
-):
-
-    ss.assignments.append({
-        "employee": employee_ids[0],
-        "date": start_date,
-        "shift": "OFF",
-        "start_time": None,
-        "end_time": None,
-    })
-
-    st.rerun()
-
-
-# ============================================================
-# 9. 排班偏好
-# ============================================================
-
-st.header("⭐ 排班偏好")
-
-
-# ============================================================
-# 9-1 偏好班別
-# ============================================================
-
-st.subheader("偏好班別")
-
-preferred_shift_delete = None
-
-for i, rule in enumerate(
-    ss.preferred_shifts
-):
-
-    with st.expander(
-        f"偏好班別 {i + 1}",
-        expanded=False,
-    ):
-
-        pref_employee = st.selectbox(
-            "人員",
-            employee_ids,
-            index=safe_index(
-                employee_ids,
-                rule["employee"],
-            ),
-            key=f"pref_employee_{i}",
-        )
-
-        pref_shift_values = [
-            "MORNING",
-            "MIDDLE",
-            "NIGHT",
-        ]
-
-        pref_shift_labels = [
-            "早班",
-            "中班",
-            "晚班",
-        ]
-
-        pref_shift_label = st.selectbox(
-            "偏好班別",
-            pref_shift_labels,
-            index=safe_index(
-                pref_shift_values,
-                rule["shift"],
-            ),
-            key=f"pref_shift_{i}",
-        )
-
-        use_weekday = st.checkbox(
-            "限定星期",
-            value=(
-                rule.get("weekday")
-                is not None
-            ),
-            key=f"pref_use_weekday_{i}",
-        )
-
-        weekday = None
-
-        if use_weekday:
-
-            default_weekday = (
-                rule["weekday"]
-                if rule.get("weekday")
-                is not None
-                else 0
-            )
-
-            weekday_name = st.selectbox(
-                "星期",
-                WEEKDAY_NAMES,
-                index=int(default_weekday),
-                key=f"pref_weekday_{i}",
-            )
-
-            weekday = WEEKDAY_MAP[
-                weekday_name
-            ]
-
-        ss.preferred_shifts[i] = {
-            "employee": pref_employee,
-            "shift": SHIFT_OPTIONS[
-                pref_shift_label
-            ],
-            "weekday": weekday,
-        }
-
-        if st.button(
-            "🗑️ 刪除此偏好",
-            key=f"delete_pref_shift_{i}",
-        ):
-            preferred_shift_delete = i
-
-
-if preferred_shift_delete is not None:
-
-    ss.preferred_shifts.pop(
-        preferred_shift_delete
-    )
-
-    st.rerun()
-
-
-if st.button(
-    "＋ 新增偏好班別",
-    key="add_pref_shift",
-):
-
-    ss.preferred_shifts.append({
-        "employee": employee_ids[0],
-        "shift": "MORNING",
-        "weekday": None,
-    })
-
-    st.rerun()
-
-
-# ============================================================
-# 9-2 偏好休假星期
-# ============================================================
-
-st.subheader("偏好休假星期")
-
-preferred_off_delete = None
-
-for i, rule in enumerate(
-    ss.preferred_days_off
-):
-
-    with st.expander(
-        f"偏好休假 {i + 1}",
-        expanded=False,
-    ):
-
-        pref_off_employee = st.selectbox(
-            "人員",
-            employee_ids,
-            index=safe_index(
-                employee_ids,
-                rule["employee"],
-            ),
-            key=f"pref_off_employee_{i}",
-        )
-
-        pref_off_weekday = st.selectbox(
-            "偏好休星期",
-            WEEKDAY_NAMES,
-            index=int(
-                rule["weekday"]
-            ),
-            key=f"pref_off_weekday_{i}",
-        )
-
-        ss.preferred_days_off[i] = {
-            "employee": pref_off_employee,
-            "weekday": WEEKDAY_MAP[
-                pref_off_weekday
-            ],
-        }
-
-        if st.button(
-            "🗑️ 刪除此偏好",
-            key=f"delete_pref_off_{i}",
-        ):
-            preferred_off_delete = i
-
-
-if preferred_off_delete is not None:
-
-    ss.preferred_days_off.pop(
-        preferred_off_delete
-    )
-
-    st.rerun()
-
-
-if st.button(
-    "＋ 新增偏好休假",
-    key="add_pref_off",
-):
-
-    ss.preferred_days_off.append({
-        "employee": employee_ids[0],
-        "weekday": 0,
-    })
-
-    st.rerun()
-
-
-# ============================================================
-# 9-3 偏好連休
-# ============================================================
-
-st.subheader("偏好連休")
-
-selected_consecutive = st.multiselect(
-    "偏好連續休假的人員",
-    employee_ids,
-    default=[
-        employee
-        for employee in ss.consecutive_off
-        if employee in employee_ids
-    ],
-)
-
-ss.consecutive_off = (
-    selected_consecutive
-)
-
-
-# ============================================================
-# 9-4 兩人避免同班
-# ============================================================
-
-st.subheader("兩人避免同班")
-
-different_delete = None
-
-for i, rule in enumerate(
-    ss.different_shift
-):
-
-    with st.expander(
-        f"不同班組合 {i + 1}",
-        expanded=False,
-    ):
-
-        employee_a = st.selectbox(
-            "人員 A",
-            employee_ids,
-            index=safe_index(
-                employee_ids,
-                rule["employees"][0],
-            ),
-            key=f"different_a_{i}",
-        )
-
-        available_b = [
-            employee
-            for employee in employee_ids
-            if employee != employee_a
-        ]
-
-        if available_b:
-
-            employee_b = st.selectbox(
-                "人員 B",
-                available_b,
-                index=safe_index(
-                    available_b,
-                    rule["employees"][1],
-                ),
-                key=f"different_b_{i}",
-            )
-
-            ss.different_shift[i] = {
-                "employees": [
-                    employee_a,
-                    employee_b,
-                ]
-            }
-
-        else:
-
-            st.warning(
-                "至少需要兩位員工。"
-            )
-
-        if st.button(
-            "🗑️ 刪除此組合",
-            key=f"delete_different_{i}",
-        ):
-            different_delete = i
-
-
-if different_delete is not None:
-
-    ss.different_shift.pop(
-        different_delete
-    )
-
-    st.rerun()
-
-
-if st.button(
-    "＋ 新增不同班組合",
-    key="add_different",
-):
-
-    if len(employee_ids) >= 2:
-
-        ss.different_shift.append({
-            "employees": [
-                employee_ids[0],
-                employee_ids[1],
-            ]
-        })
-
-        st.rerun()
+with manager_tab2:
+    st.divider()
+    with st.expander("📣 會議設定", expanded=False):
         # ============================================================
-# 10. 自動排班
-# ============================================================
+        # 5. 會議
+        # ============================================================
 
-st.divider()
+        st.header("📣 會議")
 
-st.header("🤖 自動排班")
+        st.caption(
+            "會議算上班。選擇日期與參加會議的人員。"
+        )
 
-st.caption(
-    "確認上方設定後，按下按鈕產生班表。"
-)
+        meeting_delete = None
+
+        for i, meeting in enumerate(ss.meetings):
+
+            with st.expander(
+                f"會議 {i + 1}",
+                expanded=True,
+            ):
+
+                meeting_date = st.date_input(
+                    "日期",
+                    value=meeting["date"],
+                    key=f"meeting_date_{i}",
+                )
+
+                meeting_employee = st.selectbox(
+                    "會議人員",
+                    employee_ids,
+                    index=safe_index(
+                        employee_ids,
+                        meeting["employee"],
+                    ),
+                    key=f"meeting_employee_{i}",
+                )
+
+                ss.meetings[i] = {
+                    "date": meeting_date,
+                    "employee": meeting_employee,
+                }
+
+                if st.button(
+                    "🗑️ 刪除此會議",
+                    key=f"delete_meeting_{i}",
+                ):
+                    meeting_delete = i
 
 
-if st.button(
-    "🚀 開始自動排班",
-    type="primary",
-    use_container_width=True,
-):
+        if meeting_delete is not None:
 
-    errors = []
+            ss.meetings.pop(meeting_delete)
+
+            st.rerun()
 
 
-       # ========================================================
-    # 10-1 檢查營業時間
-    # ========================================================
-
-    day_name_map = {
-        "monday": "週一",
-        "tuesday": "週二",
-        "wednesday": "週三",
-        "thursday": "週四",
-        "friday": "週五",
-        "saturday": "週六",
-        "sunday": "週日",
-    }
-
-    for day_key, day_name in day_name_map.items():
-
-        day_hours = business_hours_ui[day_key]
-
-        if (
-            time_to_minutes(day_hours["end"])
-            <= time_to_minutes(day_hours["start"])
+        if st.button(
+            "＋ 新增會議",
+            key="add_meeting",
         ):
-            errors.append(
-                f"{day_name}的結束營業時間必須晚於開始營業時間。"
-            )
+
+            ss.meetings.append({
+                "date": start_date,
+                "employee": employee_ids[0],
+            })
+
+            st.rerun()
 
 
-    # ========================================================
-    # 10-2 會議資料
-    # ========================================================
 
-    meeting_assignments = []
-    meeting_counts = {}
-    seen_meetings = set()
+    st.divider()
+    # ============================================================
+    # 6. 固定班
+    # ============================================================
 
-    for meeting in ss.meetings:
-
-        meeting_date = meeting["date"]
-        meeting_employee = meeting["employee"]
-
-        # 只送本週資料
-        if not (
-            start_date
-            <= meeting_date
-            <= end_date
-        ):
-            continue
-
-        meeting_key = (
-            meeting_employee,
-            meeting_date,
-        )
-
-        # 同一人同一天不要重複加入
-        if meeting_key in seen_meetings:
-            continue
-
-        seen_meetings.add(
-            meeting_key
-        )
-
-        date_string = (
-            meeting_date.isoformat()
-        )
-
-        meeting_counts[
-            date_string
-        ] = (
-            meeting_counts.get(
-                date_string,
-                0,
-            )
-            + 1
-        )
-
-        meeting_assignments.append({
-            "employee":
-                meeting_employee,
-            "date":
-                date_string,
-            "shift":
-                "MEETING",
-            "start_time":
-                None,
-            "end_time":
-                None,
-        })
-
-
-    meetings_payload = [
-        {
-            "date": meeting_date,
-            "staff_count": staff_count,
-        }
-        for meeting_date, staff_count
-        in meeting_counts.items()
-    ]
-
-
-    # ========================================================
-    # 10-3 排假 / 指定班
-    # ========================================================
-
-    assignments_payload = []
-
-    seen_assignments = set()
-
-    # 員工端已儲存在 Supabase 的排假／指定班，直接帶入本週排班模型
-    try:
-        leave_response_for_schedule = (
-            supabase
-            .table("leave_requests")
-            .select("*")
-            .gte("request_date", start_date.isoformat())
-            .lte("request_date", end_date.isoformat())
-            .order("request_date")
-            .execute()
-        )
-        leave_rows_for_schedule = leave_response_for_schedule.data or []
-    except Exception as error:
-        leave_rows_for_schedule = []
-        errors.append(f"無法讀取本週員工排假資料：{error}")
-
-    for row in leave_rows_for_schedule:
-        row_date = date.fromisoformat(row["request_date"])
-        assignment_key = (row["employee_id"], row_date)
-        if assignment_key in seen_assignments:
-            continue
-        seen_assignments.add(assignment_key)
-        assignments_payload.append({
-            "employee": row["employee_id"],
-            "date": row["request_date"],
-            "shift": row["request_type"],
-            "start_time": (str(row["start_time"])[:5] if row.get("start_time") else None),
-            "end_time": (str(row["end_time"])[:5] if row.get("end_time") else None),
-        })
-
-    # 店長在本頁手動新增的設定也一起送入；若與員工排假撞同人同日則提示
-    for rule in ss.assignments:
-
-        rule_date = rule["date"]
-
-        # 排班週以外的設定不送入這次模型
-        if not (
-            start_date
-            <= rule_date
-            <= end_date
-        ):
-            continue
-
-        assignment_key = (
-            rule["employee"],
-            rule_date,
-        )
-
-        if assignment_key in seen_assignments:
-
-            errors.append(
-                f"{rule['employee']} 在 "
-                f"{rule_date} 有重複的排假／指定班設定。"
-            )
-
-            continue
-
-        seen_assignments.add(
-            assignment_key
-        )
-
-        assignments_payload.append({
-            "employee":
-                rule["employee"],
-            "date":
-                rule_date.isoformat(),
-            "shift":
-                rule["shift"],
-            "start_time":
-                rule.get("start_time"),
-            "end_time":
-                rule.get("end_time"),
-        })
-
-
-    # ========================================================
-    # 10-4 檢查會議與指定班是否撞期
-    # ========================================================
-
-    for meeting in meeting_assignments:
-
-        meeting_key = (
-            meeting["employee"],
-            date.fromisoformat(
-                meeting["date"]
-            ),
-        )
-
-        if meeting_key in seen_assignments:
-
-            errors.append(
-                f"{meeting['employee']} 在 "
-                f"{meeting['date']} 同時設定了會議"
-                "與其他排假／指定班。"
-            )
-
-
-    assignments_payload.extend(
-        meeting_assignments
+    st.header("🔒 固定班")
+    st.caption(
+        "固定班代表：這位員工如果上班，只能排指定班別，但仍可以正常休假。"
     )
 
-
-    # ========================================================
-    # 10-5 連休偏好
-    # ========================================================
-
-    consecutive_payload = [
-        {
-            "employee": employee
-        }
-        for employee
-        in ss.consecutive_off
-    ]
-
-
-    # ========================================================
-    # 10-6 建立要送進後端的參數
-    # ========================================================
-
-       # 讀取本週人力需求
-    staffing_response = (
-        supabase
-        .table("weekly_staffing")
-        .select("*")
-        .eq("week_start", start_date.isoformat())
-        .order("weekday")
-        .execute()
-    )
-
-    staffing_rows_for_schedule = staffing_response.data or []
-
-    staffing_map_for_schedule = {
-        int(row["weekday"]): row
-        for row in staffing_rows_for_schedule
-    }
-
-    weekly_staffing_for_schedule = {}
-
-    for weekday_num in range(7):
-        saved_staffing = staffing_map_for_schedule.get(weekday_num)
-
-        weekly_staffing_for_schedule[weekday_num] = {
-            "morning": (
-                int(saved_staffing["morning_required"])
-                if saved_staffing
-                else 2
-            ),
-            "middle": (
-                int(saved_staffing["middle_required"])
-                if saved_staffing
-                else 0
-            ),
-            "night": (
-                int(saved_staffing["night_required"])
-                if saved_staffing
-                else 3
-            ),
-        }
-
-    # ========================================================
-    # 從 Supabase 讀取固定班 / 固定休假，作為 solver 唯一資料來源
-    # ========================================================
+    # 固定規則以 Supabase 為唯一正式資料來源
     try:
-        solver_fixed_rules_response = (
+        fixed_rules_response = (
             supabase
             .table("employee_fixed_rules")
             .select("*")
             .order("employee_id")
             .execute()
         )
-        solver_fixed_rules = solver_fixed_rules_response.data
+        fixed_rules_all = fixed_rules_response.data or []
     except Exception as error:
-        solver_fixed_rules = []
-        errors.append(f"無法讀取固定班 / 固定休假：{error}")
+        fixed_rules_all = []
+        st.error("❌ 無法讀取固定規則")
+        st.exception(error)
 
-    fixed_shifts_payload = []
-    fixed_days_off_payload = []
+    fixed_shift_rows = [
+        rule
+        for rule in fixed_rules_all
+        if rule.get("rule_type") == "FIXED_SHIFT"
+    ]
 
-    for rule in solver_fixed_rules:
-        if rule.get("rule_type") == "FIXED_SHIFT":
-            if rule.get("shift") in {"MORNING", "MIDDLE", "NIGHT"}:
-                fixed_shifts_payload.append({
-                    "employee": rule["employee_id"],
-                    "shift": rule["shift"],
-                })
-        elif rule.get("rule_type") == "FIXED_OFF":
-            if rule.get("weekday") is not None:
-                fixed_days_off_payload.append({
-                    "employee": rule["employee_id"],
-                    "weekday": int(rule["weekday"]),
-                })
+    fixed_off_rows = [
+        rule
+        for rule in fixed_rules_all
+        if rule.get("rule_type") == "FIXED_OFF"
+    ]
 
-    payload = {
-
-        "start_date":
-            start_date.isoformat(),
-
-        "end_date":
-            end_date.isoformat(),
-
-        "employees":
-            employees,
-
-        "business_hours": business_hours_ui,
-
-        "shifts": {
-            "demand": {
-                "monday": {
-                    "morning": weekly_staffing_for_schedule[0]["morning"],
-                    "middle": weekly_staffing_for_schedule[0]["middle"],
-                    "night": weekly_staffing_for_schedule[0]["night"],
-                },
-                "tuesday": {
-                    "morning": weekly_staffing_for_schedule[1]["morning"],
-                    "middle": weekly_staffing_for_schedule[1]["middle"],
-                    "night": weekly_staffing_for_schedule[1]["night"],
-                },
-                "wednesday": {
-                    "morning": weekly_staffing_for_schedule[2]["morning"],
-                    "middle": weekly_staffing_for_schedule[2]["middle"],
-                    "night": weekly_staffing_for_schedule[2]["night"],
-                },
-                "thursday": {
-                    "morning": weekly_staffing_for_schedule[3]["morning"],
-                    "middle": weekly_staffing_for_schedule[3]["middle"],
-                    "night": weekly_staffing_for_schedule[3]["night"],
-                },
-                "friday": {
-                    "morning": weekly_staffing_for_schedule[4]["morning"],
-                    "middle": weekly_staffing_for_schedule[4]["middle"],
-                    "night": weekly_staffing_for_schedule[4]["night"],
-                },
-                "saturday": {
-                    "morning": weekly_staffing_for_schedule[5]["morning"],
-                    "middle": weekly_staffing_for_schedule[5]["middle"],
-                    "night": weekly_staffing_for_schedule[5]["night"],
-                },
-                "sunday": {
-                    "morning": weekly_staffing_for_schedule[6]["morning"],
-                    "middle": weekly_staffing_for_schedule[6]["middle"],
-                    "night": weekly_staffing_for_schedule[6]["night"],
-                },
-            },
-
-            "middle_start": middle_start,
-        },
-
-        
-        "meetings":
-            meetings_payload,
-
-        "fixed_shifts": fixed_shifts_payload,
-
-        "fixed_days_off": fixed_days_off_payload,
-
-        "assignments":
-            assignments_payload,
-
-        "preferences": {
-
-            "preferred_shifts":
-                ss.preferred_shifts,
-
-            "preferred_days_off":
-                ss.preferred_days_off,
-
-            "consecutive_off":
-                consecutive_payload,
-
-            "different_shift":
-                ss.different_shift,
-        },
+    shift_label_map = {
+        "MORNING": "早班",
+        "MIDDLE": "中班",
+        "NIGHT": "晚班",
+    }
+    shift_code_map = {
+        "早班": "MORNING",
+        "中班": "MIDDLE",
+        "晚班": "NIGHT",
     }
 
-
-    # ========================================================
-    # 10-7 執行後端 OR-Tools
-    # ========================================================
-
-    if errors:
-
-        st.error(
-            "目前設定有衝突，請先修正："
-        )
-
-        for error in errors:
-
-            st.write(
-                f"• {error}"
+    if fixed_shift_rows:
+        for i, rule in enumerate(fixed_shift_rows):
+            employee_name = employee_name_map.get(
+                rule["employee_id"],
+                rule["employee_id"],
             )
 
-    else:
+            col1, col2 = st.columns([4, 1])
 
-        try:
-
-            request = ScheduleRequest(
-                **payload
-            )
-
-            with st.spinner(
-                "正在計算最佳班表..."
-            ):
-
-                result = solve_schedule(
-                    request
+            with col1:
+                st.write(
+                    f"👤 {employee_name}｜"
+                    f"固定{shift_label_map.get(rule.get('shift'), rule.get('shift'))}"
                 )
 
-            ss.schedule_result = result
+            with col2:
+                if st.button(
+                    "刪除",
+                    key=f"delete_fixed_shift_db_{i}",
+                ):
+                    try:
+                        (
+                            supabase
+                            .table("employee_fixed_rules")
+                            .delete()
+                            .eq("employee_id", rule["employee_id"])
+                            .eq("rule_type", "FIXED_SHIFT")
+                            .eq("shift", rule["shift"])
+                            .execute()
+                        )
+                        st.success("✅ 已刪除固定班")
+                        st.rerun()
+                    except Exception as error:
+                        st.error("❌ 刪除固定班失敗")
+                        st.exception(error)
+    else:
+        st.info("目前沒有固定班。")
 
-        except Exception as error:
+    with st.expander("＋ 新增 / 修改固定班"):
+        new_fixed_employee = st.selectbox(
+            "人員",
+            employee_ids,
+            key="new_fixed_shift_employee",
+        )
 
-            st.error(
-                "無法執行排班。"
+        new_fixed_shift_label = st.selectbox(
+            "固定班別",
+            ["早班", "中班", "晚班"],
+            key="new_fixed_shift_value",
+        )
+
+        if st.button(
+            "💾 儲存固定班",
+            key="save_fixed_shift_db",
+            use_container_width=True,
+        ):
+            try:
+                new_fixed_shift = shift_code_map[new_fixed_shift_label]
+
+                existing_shift = next(
+                    (
+                        rule
+                        for rule in fixed_shift_rows
+                        if rule.get("employee_id") == new_fixed_employee
+                    ),
+                    None,
+                )
+
+                if existing_shift:
+                    (
+                        supabase
+                        .table("employee_fixed_rules")
+                        .update({
+                            "shift": new_fixed_shift,
+                            "weekday": None,
+                        })
+                        .eq("employee_id", new_fixed_employee)
+                        .eq("rule_type", "FIXED_SHIFT")
+                        .execute()
+                    )
+                    st.success("✅ 固定班已更新")
+                else:
+                    (
+                        supabase
+                        .table("employee_fixed_rules")
+                        .insert({
+                            "employee_id": new_fixed_employee,
+                            "rule_type": "FIXED_SHIFT",
+                            "shift": new_fixed_shift,
+                            "weekday": None,
+                        })
+                        .execute()
+                    )
+                    st.success("✅ 固定班已新增")
+
+                st.rerun()
+
+            except Exception as error:
+                st.error("❌ 儲存固定班失敗")
+                st.exception(error)
+
+
+    # ============================================================
+    # 7. 固定休假
+    # ============================================================
+
+    st.header("🏖️ 固定休假")
+    st.caption("設定員工固定星期幾休假。")
+
+    weekday_label_map = {
+        0: "週一",
+        1: "週二",
+        2: "週三",
+        3: "週四",
+        4: "週五",
+        5: "週六",
+        6: "週日",
+    }
+
+    if fixed_off_rows:
+        for i, rule in enumerate(fixed_off_rows):
+            employee_name = employee_name_map.get(
+                rule["employee_id"],
+                rule["employee_id"],
+            )
+            weekday_value = int(rule["weekday"])
+
+            col1, col2 = st.columns([4, 1])
+
+            with col1:
+                st.write(
+                    f"👤 {employee_name}｜"
+                    f"固定{weekday_label_map.get(weekday_value, weekday_value)}休假"
+                )
+
+            with col2:
+                if st.button(
+                    "刪除",
+                    key=f"delete_fixed_off_db_{i}",
+                ):
+                    try:
+                        (
+                            supabase
+                            .table("employee_fixed_rules")
+                            .delete()
+                            .eq("employee_id", rule["employee_id"])
+                            .eq("rule_type", "FIXED_OFF")
+                            .eq("weekday", weekday_value)
+                            .execute()
+                        )
+                        st.success("✅ 已刪除固定休假")
+                        st.rerun()
+                    except Exception as error:
+                        st.error("❌ 刪除固定休假失敗")
+                        st.exception(error)
+    else:
+        st.info("目前沒有固定休假。")
+
+    with st.expander("＋ 新增固定休假"):
+        new_fixed_off_employee = st.selectbox(
+            "人員",
+            employee_ids,
+            key="new_fixed_off_employee_db",
+        )
+
+        new_fixed_off_weekday_label = st.selectbox(
+            "固定休星期",
+            WEEKDAY_NAMES,
+            key="new_fixed_off_weekday_db",
+        )
+
+        if st.button(
+            "💾 儲存固定休假",
+            key="save_fixed_off_db",
+            use_container_width=True,
+        ):
+            try:
+                new_weekday = WEEKDAY_MAP[
+                    new_fixed_off_weekday_label
+                ]
+
+                duplicate_off = any(
+                    (
+                        rule.get("employee_id") == new_fixed_off_employee
+                        and int(rule.get("weekday")) == new_weekday
+                    )
+                    for rule in fixed_off_rows
+                    if rule.get("weekday") is not None
+                )
+
+                if duplicate_off:
+                    st.warning("⚠️ 這筆固定休假已經存在，不會重複新增。")
+                else:
+                    (
+                        supabase
+                        .table("employee_fixed_rules")
+                        .insert({
+                            "employee_id": new_fixed_off_employee,
+                            "rule_type": "FIXED_OFF",
+                            "shift": None,
+                            "weekday": new_weekday,
+                        })
+                        .execute()
+                    )
+                    st.success("✅ 固定休假已新增")
+                    st.rerun()
+
+            except Exception as error:
+                st.error("❌ 儲存固定休假失敗")
+                st.exception(error)
+
+
+
+    # 舊的 session_state「排假 / 指定班」編輯器已移除。
+    # 正式排假資料以 Supabase leave_requests 為唯一資料來源，
+    # 本週排假已在本週總結上方顯示。
+
+with manager_tab1:
+    st.divider()
+    # ============================================================
+    # 9. 排班偏好
+    # ============================================================
+
+    st.header("⭐ 排班偏好")
+
+
+    # ============================================================
+    # 9-1 偏好班別
+    # ============================================================
+
+    st.subheader("偏好班別")
+
+    preferred_shift_delete = None
+
+    for i, rule in enumerate(
+        ss.preferred_shifts
+    ):
+
+        with st.expander(
+            f"偏好班別 {i + 1}",
+            expanded=False,
+        ):
+
+            pref_employee = st.selectbox(
+                "人員",
+                employee_ids,
+                index=safe_index(
+                    employee_ids,
+                    rule["employee"],
+                ),
+                key=f"pref_employee_{i}",
             )
 
-            st.exception(
-                error
+            pref_shift_values = [
+                "MORNING",
+                "MIDDLE",
+                "NIGHT",
+            ]
+
+            pref_shift_labels = [
+                "早班",
+                "中班",
+                "晚班",
+            ]
+
+            pref_shift_label = st.selectbox(
+                "偏好班別",
+                pref_shift_labels,
+                index=safe_index(
+                    pref_shift_values,
+                    rule["shift"],
+                ),
+                key=f"pref_shift_{i}",
             )
 
+            use_weekday = st.checkbox(
+                "限定星期",
+                value=(
+                    rule.get("weekday")
+                    is not None
+                ),
+                key=f"pref_use_weekday_{i}",
+            )
 
-# ============================================================
-# 11. 顯示排班結果
-# ============================================================
+            weekday = None
 
-if "schedule_result" in ss:
+            if use_weekday:
 
-    result = ss.schedule_result
+                default_weekday = (
+                    rule["weekday"]
+                    if rule.get("weekday")
+                    is not None
+                    else 0
+                )
+
+                weekday_name = st.selectbox(
+                    "星期",
+                    WEEKDAY_NAMES,
+                    index=int(default_weekday),
+                    key=f"pref_weekday_{i}",
+                )
+
+                weekday = WEEKDAY_MAP[
+                    weekday_name
+                ]
+
+            ss.preferred_shifts[i] = {
+                "employee": pref_employee,
+                "shift": SHIFT_OPTIONS[
+                    pref_shift_label
+                ],
+                "weekday": weekday,
+            }
+
+            if st.button(
+                "🗑️ 刪除此偏好",
+                key=f"delete_pref_shift_{i}",
+            ):
+                preferred_shift_delete = i
+
+
+    if preferred_shift_delete is not None:
+
+        ss.preferred_shifts.pop(
+            preferred_shift_delete
+        )
+
+        st.rerun()
+
+
+    if st.button(
+        "＋ 新增偏好班別",
+        key="add_pref_shift",
+    ):
+
+        ss.preferred_shifts.append({
+            "employee": employee_ids[0],
+            "shift": "MORNING",
+            "weekday": None,
+        })
+
+        st.rerun()
+
+
+    # ============================================================
+    # 9-2 偏好休假星期
+    # ============================================================
+
+    st.subheader("偏好休假星期")
+
+    preferred_off_delete = None
+
+    for i, rule in enumerate(
+        ss.preferred_days_off
+    ):
+
+        with st.expander(
+            f"偏好休假 {i + 1}",
+            expanded=False,
+        ):
+
+            pref_off_employee = st.selectbox(
+                "人員",
+                employee_ids,
+                index=safe_index(
+                    employee_ids,
+                    rule["employee"],
+                ),
+                key=f"pref_off_employee_{i}",
+            )
+
+            pref_off_weekday = st.selectbox(
+                "偏好休星期",
+                WEEKDAY_NAMES,
+                index=int(
+                    rule["weekday"]
+                ),
+                key=f"pref_off_weekday_{i}",
+            )
+
+            ss.preferred_days_off[i] = {
+                "employee": pref_off_employee,
+                "weekday": WEEKDAY_MAP[
+                    pref_off_weekday
+                ],
+            }
+
+            if st.button(
+                "🗑️ 刪除此偏好",
+                key=f"delete_pref_off_{i}",
+            ):
+                preferred_off_delete = i
+
+
+    if preferred_off_delete is not None:
+
+        ss.preferred_days_off.pop(
+            preferred_off_delete
+        )
+
+        st.rerun()
+
+
+    if st.button(
+        "＋ 新增偏好休假",
+        key="add_pref_off",
+    ):
+
+        ss.preferred_days_off.append({
+            "employee": employee_ids[0],
+            "weekday": 0,
+        })
+
+        st.rerun()
+
+
+    # ============================================================
+    # 9-3 偏好連休
+    # ============================================================
+
+    st.subheader("偏好連休")
+
+    selected_consecutive = st.multiselect(
+        "偏好連續休假的人員",
+        employee_ids,
+        default=[
+            employee
+            for employee in ss.consecutive_off
+            if employee in employee_ids
+        ],
+    )
+
+    ss.consecutive_off = (
+        selected_consecutive
+    )
+
+
+    # ============================================================
+    # 9-4 兩人避免同班
+    # ============================================================
+
+    st.subheader("兩人避免同班")
+
+    different_delete = None
+
+    for i, rule in enumerate(
+        ss.different_shift
+    ):
+
+        with st.expander(
+            f"不同班組合 {i + 1}",
+            expanded=False,
+        ):
+
+            employee_a = st.selectbox(
+                "人員 A",
+                employee_ids,
+                index=safe_index(
+                    employee_ids,
+                    rule["employees"][0],
+                ),
+                key=f"different_a_{i}",
+            )
+
+            available_b = [
+                employee
+                for employee in employee_ids
+                if employee != employee_a
+            ]
+
+            if available_b:
+
+                employee_b = st.selectbox(
+                    "人員 B",
+                    available_b,
+                    index=safe_index(
+                        available_b,
+                        rule["employees"][1],
+                    ),
+                    key=f"different_b_{i}",
+                )
+
+                ss.different_shift[i] = {
+                    "employees": [
+                        employee_a,
+                        employee_b,
+                    ]
+                }
+
+            else:
+
+                st.warning(
+                    "至少需要兩位員工。"
+                )
+
+            if st.button(
+                "🗑️ 刪除此組合",
+                key=f"delete_different_{i}",
+            ):
+                different_delete = i
+
+
+    if different_delete is not None:
+
+        ss.different_shift.pop(
+            different_delete
+        )
+
+        st.rerun()
+
+
+    if st.button(
+        "＋ 新增不同班組合",
+        key="add_different",
+    ):
+
+        if len(employee_ids) >= 2:
+
+            ss.different_shift.append({
+                "employees": [
+                    employee_ids[0],
+                    employee_ids[1],
+                ]
+            })
+
+            st.rerun()
+
+
+
+with manager_tab3:
+    # ============================================================
+    # 10. 自動排班
+    # ============================================================
 
     st.divider()
 
-    st.header("📋 自動排班結果")
+    st.header("🤖 自動排班")
+
+    st.caption(
+        "確認上方設定後，按下按鈕產生班表。"
+    )
 
 
-    # ========================================================
-    # 排班失敗
-    # ========================================================
-
-    if not result.get(
-        "success",
-        False,
+    if st.button(
+        "🚀 開始自動排班",
+        type="primary",
+        use_container_width=True,
     ):
 
-        st.error(
-            result.get(
-                "message",
-                "找不到符合目前硬性條件的班表。"
-            )
-        )
-
-        st.warning(
-            "可以檢查固定班、固定休假、排假、會議或每週上班天數是否互相衝突。"
-        )
+        errors = []
 
 
-    # ========================================================
-    # 排班成功
-    # ========================================================
+           # ========================================================
+        # 10-1 檢查營業時間
+        # ========================================================
 
-    else:
+        day_name_map = {
+            "monday": "週一",
+            "tuesday": "週二",
+            "wednesday": "週三",
+            "thursday": "週四",
+            "friday": "週五",
+            "saturday": "週六",
+            "sunday": "週日",
+        }
 
-        st.success(
-            "✅ 自動排班完成"
-        )
+        for day_key, day_name in day_name_map.items():
 
-        if result.get("status"):
+            day_hours = business_hours_ui[day_key]
 
-            st.caption(
-                f"求解狀態：{result['status']}"
-            )
-
-
-        # ====================================================
-        # 11-1 班表
-        # ====================================================
-
-        schedule_rows = []
-
-        schedule_data = result.get(
-            "schedule",
-            [],
-        )
-
-
-        for employee_result in schedule_data:
-
-            employee_name = (
-                employee_result.get(
-                    "name"
+            if (
+                time_to_minutes(day_hours["end"])
+                <= time_to_minutes(day_hours["start"])
+            ):
+                errors.append(
+                    f"{day_name}的結束營業時間必須晚於開始營業時間。"
                 )
-                or employee_result.get(
-                    "employee"
-                )
-                or employee_result.get(
-                    "id"
-                )
-                or "未知"
+
+
+        # ========================================================
+        # 10-2 會議資料
+        # ========================================================
+
+        meeting_assignments = []
+        meeting_counts = {}
+        seen_meetings = set()
+
+        for meeting in ss.meetings:
+
+            meeting_date = meeting["date"]
+            meeting_employee = meeting["employee"]
+
+            # 只送本週資料
+            if not (
+                start_date
+                <= meeting_date
+                <= end_date
+            ):
+                continue
+
+            meeting_key = (
+                meeting_employee,
+                meeting_date,
             )
 
-            row = {
-                "人員": employee_name
+            # 同一人同一天不要重複加入
+            if meeting_key in seen_meetings:
+                continue
+
+            seen_meetings.add(
+                meeting_key
+            )
+
+            date_string = (
+                meeting_date.isoformat()
+            )
+
+            meeting_counts[
+                date_string
+            ] = (
+                meeting_counts.get(
+                    date_string,
+                    0,
+                )
+                + 1
+            )
+
+            meeting_assignments.append({
+                "employee":
+                    meeting_employee,
+                "date":
+                    date_string,
+                "shift":
+                    "MEETING",
+                "start_time":
+                    None,
+                "end_time":
+                    None,
+            })
+
+
+        meetings_payload = [
+            {
+                "date": meeting_date,
+                "staff_count": staff_count,
+            }
+            for meeting_date, staff_count
+            in meeting_counts.items()
+        ]
+
+
+        # ========================================================
+        # 10-3 排假 / 指定班
+        # ========================================================
+
+        assignments_payload = []
+
+        seen_assignments = set()
+
+        # 員工端已儲存在 Supabase 的排假／指定班，直接帶入本週排班模型
+        try:
+            leave_response_for_schedule = (
+                supabase
+                .table("leave_requests")
+                .select("*")
+                .gte("request_date", start_date.isoformat())
+                .lte("request_date", end_date.isoformat())
+                .order("request_date")
+                .execute()
+            )
+            leave_rows_for_schedule = leave_response_for_schedule.data or []
+        except Exception as error:
+            leave_rows_for_schedule = []
+            errors.append(f"無法讀取本週員工排假資料：{error}")
+
+        for row in leave_rows_for_schedule:
+            row_date = date.fromisoformat(row["request_date"])
+            assignment_key = (row["employee_id"], row_date)
+            if assignment_key in seen_assignments:
+                continue
+            seen_assignments.add(assignment_key)
+            assignments_payload.append({
+                "employee": row["employee_id"],
+                "date": row["request_date"],
+                "shift": row["request_type"],
+                "start_time": (str(row["start_time"])[:5] if row.get("start_time") else None),
+                "end_time": (str(row["end_time"])[:5] if row.get("end_time") else None),
+            })
+
+        # 店長在本頁手動新增的設定也一起送入；若與員工排假撞同人同日則提示
+        for rule in ss.assignments:
+
+            rule_date = rule["date"]
+
+            # 排班週以外的設定不送入這次模型
+            if not (
+                start_date
+                <= rule_date
+                <= end_date
+            ):
+                continue
+
+            assignment_key = (
+                rule["employee"],
+                rule_date,
+            )
+
+            if assignment_key in seen_assignments:
+
+                errors.append(
+                    f"{rule['employee']} 在 "
+                    f"{rule_date} 有重複的排假／指定班設定。"
+                )
+
+                continue
+
+            seen_assignments.add(
+                assignment_key
+            )
+
+            assignments_payload.append({
+                "employee":
+                    rule["employee"],
+                "date":
+                    rule_date.isoformat(),
+                "shift":
+                    rule["shift"],
+                "start_time":
+                    rule.get("start_time"),
+                "end_time":
+                    rule.get("end_time"),
+            })
+
+
+        # ========================================================
+        # 10-4 檢查會議與指定班是否撞期
+        # ========================================================
+
+        for meeting in meeting_assignments:
+
+            meeting_key = (
+                meeting["employee"],
+                date.fromisoformat(
+                    meeting["date"]
+                ),
+            )
+
+            if meeting_key in seen_assignments:
+
+                errors.append(
+                    f"{meeting['employee']} 在 "
+                    f"{meeting['date']} 同時設定了會議"
+                    "與其他排假／指定班。"
+                )
+
+
+        assignments_payload.extend(
+            meeting_assignments
+        )
+
+
+        # ========================================================
+        # 10-5 連休偏好
+        # ========================================================
+
+        consecutive_payload = [
+            {
+                "employee": employee
+            }
+            for employee
+            in ss.consecutive_off
+        ]
+
+
+        # ========================================================
+        # 10-6 建立要送進後端的參數
+        # ========================================================
+
+           # 讀取本週人力需求
+        staffing_response = (
+            supabase
+            .table("weekly_staffing")
+            .select("*")
+            .eq("week_start", start_date.isoformat())
+            .order("weekday")
+            .execute()
+        )
+
+        staffing_rows_for_schedule = staffing_response.data or []
+
+        staffing_map_for_schedule = {
+            int(row["weekday"]): row
+            for row in staffing_rows_for_schedule
+        }
+
+        weekly_staffing_for_schedule = {}
+
+        for weekday_num in range(7):
+            saved_staffing = staffing_map_for_schedule.get(weekday_num)
+
+            weekly_staffing_for_schedule[weekday_num] = {
+                "morning": (
+                    int(saved_staffing["morning_required"])
+                    if saved_staffing
+                    else 2
+                ),
+                "middle": (
+                    int(saved_staffing["middle_required"])
+                    if saved_staffing
+                    else 0
+                ),
+                "night": (
+                    int(saved_staffing["night_required"])
+                    if saved_staffing
+                    else 3
+                ),
             }
 
+        # ========================================================
+        # 從 Supabase 讀取固定班 / 固定休假，作為 solver 唯一資料來源
+        # ========================================================
+        try:
+            solver_fixed_rules_response = (
+                supabase
+                .table("employee_fixed_rules")
+                .select("*")
+                .order("employee_id")
+                .execute()
+            )
+            solver_fixed_rules = solver_fixed_rules_response.data
+        except Exception as error:
+            solver_fixed_rules = []
+            errors.append(f"無法讀取固定班 / 固定休假：{error}")
 
-            for day_data in employee_result.get(
-                "days",
-                [],
-            ):
+        fixed_shifts_payload = []
+        fixed_days_off_payload = []
 
-                current_date = (
-                    date.fromisoformat(
-                        day_data["date"]
-                    )
-                )
+        for rule in solver_fixed_rules:
+            if rule.get("rule_type") == "FIXED_SHIFT":
+                if rule.get("shift") in {"MORNING", "MIDDLE", "NIGHT"}:
+                    fixed_shifts_payload.append({
+                        "employee": rule["employee_id"],
+                        "shift": rule["shift"],
+                    })
+            elif rule.get("rule_type") == "FIXED_OFF":
+                if rule.get("weekday") is not None:
+                    fixed_days_off_payload.append({
+                        "employee": rule["employee_id"],
+                        "weekday": int(rule["weekday"]),
+                    })
 
-                weekday_text = [
-                    "一",
-                    "二",
-                    "三",
-                    "四",
-                    "五",
-                    "六",
-                    "日",
-                ][
-                    current_date.weekday()
-                ]
+        payload = {
 
-                column_name = (
-                    current_date.strftime(
-                        "%m/%d"
-                    )
-                    +
-                    f"(週{weekday_text})"
-                )
+            "start_date":
+                start_date.isoformat(),
 
-                shift_code = (
-                    day_data.get(
-                        "shift",
-                        "OFF",
-                    )
-                )
+            "end_date":
+                end_date.isoformat(),
 
-                shift_name = (
-                    SHIFT_DISPLAY.get(
-                        shift_code,
-                        shift_code,
-                    )
-                )
+            "employees":
+                employees,
 
-                start_time_value = (
-                    day_data.get(
-                        "start_time"
-                    )
-                )
+            "business_hours": business_hours_ui,
 
-                end_time_value = (
-                    day_data.get(
-                        "end_time"
-                    )
-                )
+            "shifts": {
+                "demand": {
+                    "monday": {
+                        "morning": weekly_staffing_for_schedule[0]["morning"],
+                        "middle": weekly_staffing_for_schedule[0]["middle"],
+                        "night": weekly_staffing_for_schedule[0]["night"],
+                    },
+                    "tuesday": {
+                        "morning": weekly_staffing_for_schedule[1]["morning"],
+                        "middle": weekly_staffing_for_schedule[1]["middle"],
+                        "night": weekly_staffing_for_schedule[1]["night"],
+                    },
+                    "wednesday": {
+                        "morning": weekly_staffing_for_schedule[2]["morning"],
+                        "middle": weekly_staffing_for_schedule[2]["middle"],
+                        "night": weekly_staffing_for_schedule[2]["night"],
+                    },
+                    "thursday": {
+                        "morning": weekly_staffing_for_schedule[3]["morning"],
+                        "middle": weekly_staffing_for_schedule[3]["middle"],
+                        "night": weekly_staffing_for_schedule[3]["night"],
+                    },
+                    "friday": {
+                        "morning": weekly_staffing_for_schedule[4]["morning"],
+                        "middle": weekly_staffing_for_schedule[4]["middle"],
+                        "night": weekly_staffing_for_schedule[4]["night"],
+                    },
+                    "saturday": {
+                        "morning": weekly_staffing_for_schedule[5]["morning"],
+                        "middle": weekly_staffing_for_schedule[5]["middle"],
+                        "night": weekly_staffing_for_schedule[5]["night"],
+                    },
+                    "sunday": {
+                        "morning": weekly_staffing_for_schedule[6]["morning"],
+                        "middle": weekly_staffing_for_schedule[6]["middle"],
+                        "night": weekly_staffing_for_schedule[6]["night"],
+                    },
+                },
 
-
-                if (
-                    start_time_value
-                    and end_time_value
-                ):
-
-                    display_value = (
-                        f"{shift_name} "
-                        f"{start_time_value}"
-                        "-"
-                        f"{end_time_value}"
-                    )
-
-                else:
-
-                    display_value = (
-                        shift_name
-                    )
+                "middle_start": middle_start,
+            },
 
 
-                row[
-                    column_name
-                ] = display_value
+            "meetings":
+                meetings_payload,
+
+            "fixed_shifts": fixed_shifts_payload,
+
+            "fixed_days_off": fixed_days_off_payload,
+
+            "assignments":
+                assignments_payload,
+
+            "preferences": {
+
+                "preferred_shifts":
+                    ss.preferred_shifts,
+
+                "preferred_days_off":
+                    ss.preferred_days_off,
+
+                "consecutive_off":
+                    consecutive_payload,
+
+                "different_shift":
+                    ss.different_shift,
+            },
+        }
 
 
-            row["上班天數"] = (
-                employee_result.get(
-                    "work_days",
-                    "",
-                )
+        # ========================================================
+        # 10-7 執行後端 OR-Tools
+        # ========================================================
+
+        if errors:
+
+            st.error(
+                "目前設定有衝突，請先修正："
             )
 
-            row["總工時"] = (
-                employee_result.get(
-                    "total_hours",
-                    "",
+            for error in errors:
+
+                st.write(
+                    f"• {error}"
                 )
-            )
-
-            schedule_rows.append(
-                row
-            )
-
-
-        if schedule_rows:
-
-            st.dataframe(
-                schedule_rows,
-                use_container_width=True,
-                hide_index=True,
-            )
 
         else:
 
+            try:
+
+                request = ScheduleRequest(
+                    **payload
+                )
+
+                with st.spinner(
+                    "正在計算最佳班表..."
+                ):
+
+                    result = solve_schedule(
+                        request
+                    )
+
+                ss.schedule_result = result
+
+            except Exception as error:
+
+                st.error(
+                    "無法執行排班。"
+                )
+
+                st.exception(
+                    error
+                )
+
+
+    # ============================================================
+    # 11. 顯示排班結果
+    # ============================================================
+
+    if "schedule_result" in ss:
+
+        result = ss.schedule_result
+
+        st.divider()
+
+        st.header("📋 自動排班結果")
+
+
+        # ========================================================
+        # 排班失敗
+        # ========================================================
+
+        if not result.get(
+            "success",
+            False,
+        ):
+
+            st.error(
+                result.get(
+                    "message",
+                    "找不到符合目前硬性條件的班表。"
+                )
+            )
+
             st.warning(
-                "後端已回傳成功，但沒有取得班表資料。"
+                "可以檢查固定班、固定休假、排假、會議或每週上班天數是否互相衝突。"
             )
 
 
-        # ====================================================
-        # 11-2 個人統計
-        # ====================================================
+        # ========================================================
+        # 排班成功
+        # ========================================================
 
-        if schedule_data:
+        else:
 
-            st.subheader(
-                "👥 個人出勤統計"
+            st.success(
+                "✅ 自動排班完成"
             )
 
-            summary_rows = []
+            if result.get("status"):
+
+                st.caption(
+                    f"求解狀態：{result['status']}"
+                )
+
+
+            # ====================================================
+            # 11-1 班表
+            # ====================================================
+
+            schedule_rows = []
+
+            schedule_data = result.get(
+                "schedule",
+                [],
+            )
+
 
             for employee_result in schedule_data:
 
@@ -2821,87 +2620,239 @@ if "schedule_result" in ss:
                     or "未知"
                 )
 
-                summary_rows.append({
-                    "人員":
-                        employee_name,
-
-                    "上班天數":
-                        employee_result.get(
-                            "work_days",
-                            "",
-                        ),
-
-                    "總工時":
-                        employee_result.get(
-                            "total_hours",
-                            "",
-                        ),
-                })
+                row = {
+                    "人員": employee_name
+                }
 
 
-            st.dataframe(
-                summary_rows,
-                use_container_width=True,
-                hide_index=True,
-            )
+                for day_data in employee_result.get(
+                    "days",
+                    [],
+                ):
 
-
-        # ====================================================
-        # 11-3 人力不足
-        # ====================================================
-
-        deficits = result.get(
-            "deficits",
-            [],
-        )
-
-
-        if deficits:
-
-            st.subheader(
-                "⚠️ 人力不足"
-            )
-
-            deficit_rows = []
-
-            for deficit in deficits:
-
-                shift_code = (
-                    deficit.get(
-                        "shift",
-                        ""
+                    current_date = (
+                        date.fromisoformat(
+                            day_data["date"]
+                        )
                     )
-                )
 
-                deficit_rows.append({
-                    "日期":
-                        deficit.get(
-                            "date",
-                            "",
-                        ),
+                    weekday_text = [
+                        "一",
+                        "二",
+                        "三",
+                        "四",
+                        "五",
+                        "六",
+                        "日",
+                    ][
+                        current_date.weekday()
+                    ]
 
-                    "班別":
+                    column_name = (
+                        current_date.strftime(
+                            "%m/%d"
+                        )
+                        +
+                        f"(週{weekday_text})"
+                    )
+
+                    shift_code = (
+                        day_data.get(
+                            "shift",
+                            "OFF",
+                        )
+                    )
+
+                    shift_name = (
                         SHIFT_DISPLAY.get(
                             shift_code,
                             shift_code,
-                        ),
+                        )
+                    )
 
-                    "不足人數":
+                    start_time_value = (
+                        day_data.get(
+                            "start_time"
+                        )
+                    )
+
+                    end_time_value = (
+                        day_data.get(
+                            "end_time"
+                        )
+                    )
+
+
+                    if (
+                        start_time_value
+                        and end_time_value
+                    ):
+
+                        display_value = (
+                            f"{shift_name} "
+                            f"{start_time_value}"
+                            "-"
+                            f"{end_time_value}"
+                        )
+
+                    else:
+
+                        display_value = (
+                            shift_name
+                        )
+
+
+                    row[
+                        column_name
+                    ] = display_value
+
+
+                row["上班天數"] = (
+                    employee_result.get(
+                        "work_days",
+                        "",
+                    )
+                )
+
+                row["總工時"] = (
+                    employee_result.get(
+                        "total_hours",
+                        "",
+                    )
+                )
+
+                schedule_rows.append(
+                    row
+                )
+
+
+            if schedule_rows:
+
+                st.dataframe(
+                    schedule_rows,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            else:
+
+                st.warning(
+                    "後端已回傳成功，但沒有取得班表資料。"
+                )
+
+
+            # ====================================================
+            # 11-2 個人統計
+            # ====================================================
+
+            if schedule_data:
+
+                st.subheader(
+                    "👥 個人出勤統計"
+                )
+
+                summary_rows = []
+
+                for employee_result in schedule_data:
+
+                    employee_name = (
+                        employee_result.get(
+                            "name"
+                        )
+                        or employee_result.get(
+                            "employee"
+                        )
+                        or employee_result.get(
+                            "id"
+                        )
+                        or "未知"
+                    )
+
+                    summary_rows.append({
+                        "人員":
+                            employee_name,
+
+                        "上班天數":
+                            employee_result.get(
+                                "work_days",
+                                "",
+                            ),
+
+                        "總工時":
+                            employee_result.get(
+                                "total_hours",
+                                "",
+                            ),
+                    })
+
+
+                st.dataframe(
+                    summary_rows,
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+
+            # ====================================================
+            # 11-3 人力不足
+            # ====================================================
+
+            deficits = result.get(
+                "deficits",
+                [],
+            )
+
+
+            if deficits:
+
+                st.subheader(
+                    "⚠️ 人力不足"
+                )
+
+                deficit_rows = []
+
+                for deficit in deficits:
+
+                    shift_code = (
                         deficit.get(
-                            "deficit",
-                            0,
-                        ),
-                })
+                            "shift",
+                            ""
+                        )
+                    )
+
+                    deficit_rows.append({
+                        "日期":
+                            deficit.get(
+                                "date",
+                                "",
+                            ),
+
+                        "班別":
+                            SHIFT_DISPLAY.get(
+                                shift_code,
+                                shift_code,
+                            ),
+
+                        "不足人數":
+                            deficit.get(
+                                "deficit",
+                                0,
+                            ),
+                    })
 
 
-            st.dataframe(
-                deficit_rows,
-                use_container_width=True,
-                hide_index=True,
-            )
+                st.dataframe(
+                    deficit_rows,
+                    use_container_width=True,
+                    hide_index=True,
+                )
 
-        else:
+            else:
 
-            st.success(
-                "✅ 所有基礎營業班別人力需求皆已滿足。"
-            )
+                st.success(
+                    "✅ 所有基礎營業班別人力需求皆已滿足。"
+                )
+
+    st.divider()
+    st.markdown("### 📚 歷史班表")
+    st.caption("歷史班表將保留最近 2 週，並用於跨週七休一、晚接早與偏好檢核。")
