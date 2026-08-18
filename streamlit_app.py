@@ -1385,32 +1385,23 @@ else:
         # 本週人力配置
         # --------------------------------------------------------
 
-    with st.expander("📣 會議｜＋新增 / 修改", expanded=False):
-        # ============================================================
-        # 5. 會議
-        # ============================================================
-
-        st.header("📣 會議")
-
-        st.caption(
-            "會議算上班。選擇日期與參加會議的人員。"
-        )
+    with st.expander("📣 會議", expanded=False):
+        st.caption("會議算上班。需要新增或修改時再展開。")
 
         meeting_delete = None
 
         for i, meeting in enumerate(ss.meetings):
-
             with st.expander(
-                f"會議 {i + 1}",
-                expanded=True,
+                f"{meeting['date']}｜{employee_name_map.get(meeting['employee'], meeting['employee'])}",
+                expanded=False,
             ):
-
                 meeting_date = st.date_input(
                     "日期",
                     value=meeting["date"],
+                    min_value=start_date,
+                    max_value=end_date,
                     key=f"meeting_date_{i}",
                 )
-
                 meeting_employee = st.selectbox(
                     "會議人員",
                     employee_ids,
@@ -1418,41 +1409,84 @@ else:
                         employee_ids,
                         meeting["employee"],
                     ),
+                    format_func=lambda employee_id: employee_name_map.get(
+                        employee_id, employee_id
+                    ),
                     key=f"meeting_employee_{i}",
                 )
 
-                ss.meetings[i] = {
-                    "date": meeting_date,
-                    "employee": meeting_employee,
-                }
+                col_save, col_delete = st.columns(2)
+                with col_save:
+                    if st.button(
+                        "💾 儲存修改",
+                        key=f"save_meeting_{i}",
+                        use_container_width=True,
+                    ):
+                        duplicate = any(
+                            j != i
+                            and item.get("date") == meeting_date
+                            and item.get("employee") == meeting_employee
+                            for j, item in enumerate(ss.meetings)
+                        )
+                        if duplicate:
+                            st.warning("⚠️ 相同日期、相同員工的會議已存在，不會重複儲存。")
+                        else:
+                            ss.meetings[i] = {
+                                "date": meeting_date,
+                                "employee": meeting_employee,
+                            }
+                            st.success("✅ 會議修改已儲存")
+                            st.rerun()
 
-                if st.button(
-                    "🗑️ 刪除此會議",
-                    key=f"delete_meeting_{i}",
-                ):
-                    meeting_delete = i
-
+                with col_delete:
+                    if st.button(
+                        "🗑️ 刪除",
+                        key=f"delete_meeting_{i}",
+                        use_container_width=True,
+                    ):
+                        meeting_delete = i
 
         if meeting_delete is not None:
-
             ss.meetings.pop(meeting_delete)
-
             st.rerun()
 
+        with st.expander("＋ 新增會議", expanded=False):
+            new_meeting_date = st.date_input(
+                "日期",
+                value=start_date,
+                min_value=start_date,
+                max_value=end_date,
+                key="new_meeting_date",
+            )
+            new_meeting_employee = st.selectbox(
+                "會議人員",
+                employee_ids,
+                format_func=lambda employee_id: employee_name_map.get(
+                    employee_id, employee_id
+                ),
+                key="new_meeting_employee",
+            )
 
-        if st.button(
-            "＋ 新增會議",
-            key="add_meeting",
-        ):
-
-            ss.meetings.append({
-                "date": start_date,
-                "employee": employee_ids[0],
-            })
-
-            st.rerun()
-
-
+            if st.button(
+                "💾 儲存新會議",
+                key="save_new_meeting",
+                use_container_width=True,
+                type="primary",
+            ):
+                duplicate = any(
+                    item.get("date") == new_meeting_date
+                    and item.get("employee") == new_meeting_employee
+                    for item in ss.meetings
+                )
+                if duplicate:
+                    st.warning("⚠️ 相同日期、相同員工的會議已存在，不會重複新增。")
+                else:
+                    ss.meetings.append({
+                        "date": new_meeting_date,
+                        "employee": new_meeting_employee,
+                    })
+                    st.success("✅ 新會議已儲存")
+                    st.rerun()
 
     st.divider()
     # ============================================================
