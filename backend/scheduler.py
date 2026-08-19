@@ -5,7 +5,7 @@ from ortools.sat.python import cp_model
 
 from backend.models import ScheduleRequest
 
-SCHEDULER_BUILD = "2026-08-19-zero-demand-v3"
+SCHEDULER_BUILD = "2026-08-19-zero-demand-audited-v4"
 
 
 # ============================================================
@@ -1379,6 +1379,28 @@ def diagnose_infeasible_with_assumptions(
                 rule.shift
             ] == 1
         ).OnlyEnforceIf(lit)
+
+    # 5-1. 需求為 0 的一般班別不可排人
+    # 與正式模型完全一致，避免正式模型因 0 需求無解時診斷漏報。
+    shift_names = {
+        MORNING: "早班",
+        MIDDLE: "中班",
+        NIGHT: "晚班",
+    }
+    for current_date in dates:
+        for shift in [MORNING, MIDDLE, NIGHT]:
+            if demand[current_date, shift] == 0:
+                lit = assumption(
+                    f"{current_date}：{shift_names[shift]}需求為 0，不能排人。"
+                )
+                for employee in employee_ids:
+                    diagnostic_model.Add(
+                        diagnostic_x[
+                            employee,
+                            current_date,
+                            shift
+                        ] == 0
+                    ).OnlyEnforceIf(lit)
 
     # 6. 每天早班至少一位 FT
     for current_date in dates:
