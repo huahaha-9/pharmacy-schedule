@@ -3222,6 +3222,11 @@ with manager_tab3:
                 )
             )
 
+            if result.get("scheduler_build"):
+                st.caption(
+                    f"Solver 版本：{result['scheduler_build']}"
+                )
+
             st.warning(
                 "可以檢查固定班、固定休假、排假、會議或每週上班天數是否互相衝突。"
             )
@@ -3260,6 +3265,10 @@ with manager_tab3:
                         assignments=last_inputs["assignments"],
                     )
 
+                    st.info(
+                        "⚠️ 後端沒有回傳精準 diagnostics，以下是前端備援診斷。"
+                    )
+
                     for reason in diagnostic_reasons:
                         st.write(f"• {reason}")
 
@@ -3278,6 +3287,11 @@ with manager_tab3:
 
                 st.caption(
                     f"求解狀態：{result['status']}"
+                )
+
+            if result.get("scheduler_build"):
+                st.caption(
+                    f"Solver 版本：{result['scheduler_build']}"
                 )
 
 
