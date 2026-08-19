@@ -1248,6 +1248,17 @@ else:
         valid_employee_ids_now = {
             employee["id"] for employee in ss.employees
         }
+
+        # 清掉舊員工清單版本留下的 delete selectbox state。
+        current_delete_widget_suffix = "_".join(
+            employee["id"] for employee in ss.employees
+        )
+        for state_key in list(ss.keys()):
+            if (
+                state_key.startswith("delete_employee_id_")
+                and state_key != f"delete_employee_id_{current_delete_widget_suffix}"
+            ):
+                ss.pop(state_key, None)
         if (
             ss.get("delete_employee_id") is not None
             and ss.get("delete_employee_id") not in valid_employee_ids_now
@@ -1266,6 +1277,21 @@ else:
         
         employees = []
         
+        # v8: 清除舊版以列表位置 i 為 key 的員工 widget state。
+        # 刪除/重排員工後，舊 state 不可再套到另一個 employee_id。
+        legacy_prefixes = (
+            "name_", "type_", "pharmacist_", "senior_", "reducible_",
+            "work_days_", "hours_", "shift_preference_",
+            "preferred_off_days_", "prefer_consecutive_",
+        )
+        for state_key in list(ss.keys()):
+            for prefix in legacy_prefixes:
+                if state_key.startswith(prefix):
+                    suffix = state_key[len(prefix):]
+                    if suffix.isdigit():
+                        ss.pop(state_key, None)
+                        break
+
         employee_display_no = {
             employee["id"]: f"{display_no:02d}"
             for display_no, employee in enumerate(ss.employees, start=1)
@@ -1304,7 +1330,7 @@ else:
                 name = st.text_input(
                     "姓名",
                     value=employee["name"],
-                    key=f"name_{i}",
+                    key=f"name_{employee['id']}",
                 )
         
                 employee_type = st.radio(
@@ -1316,7 +1342,7 @@ else:
                         else 1
                     ),
                     horizontal=True,
-                    key=f"type_{i}",
+                    key=f"type_{employee['id']}",
                 )
         
                 col1, col2, col3 = st.columns(3)
@@ -1325,21 +1351,21 @@ else:
                     is_pharmacist = st.checkbox(
                         "藥師",
                         value=employee["is_pharmacist"],
-                        key=f"pharmacist_{i}",
+                        key=f"pharmacist_{employee['id']}",
                     )
         
                 with col2:
                     is_senior = st.checkbox(
                         "成熟人力",
                         value=employee["is_senior"],
-                        key=f"senior_{i}",
+                        key=f"senior_{employee['id']}",
                     )
         
                 with col3:
                     reducible = st.checkbox(
                         "可減班",
                         value=employee["reducible"],
-                        key=f"reducible_{i}",
+                        key=f"reducible_{employee['id']}",
                     )
         
                 col4, col5 = st.columns(2)
@@ -1351,7 +1377,7 @@ else:
                         max_value=7,
                         value=int(employee["work_days"]),
                         step=1,
-                        key=f"work_days_{i}",
+                        key=f"work_days_{employee['id']}",
                     )
         
                 with col5:
@@ -1361,7 +1387,7 @@ else:
                         max_value=16.0,
                         value=float(employee["hours_per_day"]),
                         step=0.5,
-                        key=f"hours_{i}",
+                        key=f"hours_{employee['id']}",
                     )
 
                 st.markdown("**排班偏好**")
@@ -1383,7 +1409,7 @@ else:
                     ["無", "偏好早班", "偏好晚班"],
                     index=["無", "偏好早班", "偏好晚班"].index(current_shift_preference),
                     horizontal=True,
-                    key=f"shift_preference_{i}",
+                    key=f"shift_preference_{employee['id']}",
                 )
                 prefer_morning = shift_preference_label == "偏好早班"
                 prefer_night = shift_preference_label == "偏好晚班"
@@ -1403,13 +1429,13 @@ else:
                         for weekday in current_off_days
                         if 0 <= weekday <= 6
                     ],
-                    key=f"preferred_off_days_{i}",
+                    key=f"preferred_off_days_{employee['id']}",
                 )
 
                 prefer_consecutive = st.checkbox(
                     "偏好連休",
                     value=employee["id"] in ss.consecutive_off,
-                    key=f"prefer_consecutive_{i}",
+                    key=f"prefer_consecutive_{employee['id']}",
                 )
 
                 ss.preferred_shifts = [
@@ -1533,14 +1559,20 @@ else:
                 st.info("目前沒有可刪除的員工。")
                 delete_employee_id = None
             else:
+                # 員工清單一變動就換新的 widget key，
+                # 避免手機 / 瀏覽器仍顯示已刪除員工的舊選取文字。
+                delete_widget_version = "_".join(employee_ids)
+
                 delete_employee_id = st.selectbox(
                     "選擇要刪除的員工",
-                    employee_ids,
+                    options=employee_ids,
+                    index=None,
+                    placeholder="請選擇目前存在的員工",
                     format_func=lambda employee_id: (
                         f"{employee_display_no.get(employee_id, '')}｜"
                         f"{employee_name_map.get(employee_id, employee_id)}"
                     ),
-                    key="delete_employee_id",
+                    key=f"delete_employee_id_{delete_widget_version}",
                 )
         
             delete_employee = next(
@@ -1625,6 +1657,10 @@ else:
                         ss.pop("manual_schedule", None)
 
                         ss.employees = load_employees()
+                        # 清除所有舊版刪除下拉選單狀態，避免瀏覽器顯示已刪除員工。
+                        for state_key in list(ss.keys()):
+                            if state_key.startswith("delete_employee_id_"):
+                                ss.pop(state_key, None)
                         ss.pop("delete_employee_id", None)
                         ss.pop("confirm_delete_employee", None)
 
@@ -2323,10 +2359,12 @@ else:
             new_fixed_employee = st.selectbox(
                 "人員",
                 employee_ids,
+                index=None,
+                placeholder="請選擇員工",
                 format_func=lambda employee_id: employee_name_map.get(
                     employee_id, employee_id
                 ),
-                key="new_fixed_shift_employee",
+                key=f"new_fixed_shift_employee_{'_'.join(employee_ids)}",
             )
 
             new_fixed_shift_label = st.selectbox(
@@ -2339,6 +2377,7 @@ else:
                 "💾 儲存固定班",
                 key="save_fixed_shift_db",
                 use_container_width=True,
+                disabled=(new_fixed_employee is None),
             ):
                 try:
                     new_fixed_shift = shift_code_map[new_fixed_shift_label]
@@ -2446,10 +2485,12 @@ else:
             new_fixed_off_employee = st.selectbox(
                 "人員",
                 employee_ids,
+                index=None,
+                placeholder="請選擇員工",
                 format_func=lambda employee_id: employee_name_map.get(
                     employee_id, employee_id
                 ),
-                key="new_fixed_off_employee_db",
+                key=f"new_fixed_off_employee_db_{'_'.join(employee_ids)}",
             )
 
             new_fixed_off_weekday_label = st.selectbox(
@@ -2462,6 +2503,7 @@ else:
                 "💾 儲存固定休假",
                 key="save_fixed_off_db",
                 use_container_width=True,
+                disabled=(new_fixed_off_employee is None),
             ):
                 try:
                     new_weekday = WEEKDAY_MAP[
