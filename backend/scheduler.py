@@ -1184,6 +1184,283 @@ def calculate_actual_shift_time(
 
 
 # ============================================================
+# INFEASIBLE 精準診斷（不改正式模型）
+# ============================================================
+
+def diagnose_infeasible_with_assumptions(
+    request: ScheduleRequest,
+    dates: List[str],
+    demand,
+):
+    diagnostic_model = cp_model.CpModel()
+    diagnostic_x = create_variables(
+        diagnostic_model,
+        request,
+        dates,
+    )
+
+    groups = get_employee_groups(request)
+    employee_ids = groups["employees"]
+    fts = groups["fts"]
+
+    employee_name = {
+        employee.id: employee.name
+        for employee in request.employees
+    }
+
+    descriptions = {}
+
+    def assumption(description):
+        lit = diagnostic_model.NewBoolVar(
+            f"diag_{len(descriptions)}"
+        )
+        if hasattr(diagnostic_model, "AddAssumption"):
+            diagnostic_model.AddAssumption(lit)
+        else:
+            diagnostic_model.add_assumption(lit)
+        descriptions[lit.Index()] = description
+        return lit
+
+    # 1. 每週上班天數（完全複製正式規則）
+    for employee in request.employees:
+        work_count = sum(
+            1 - diagnostic_x[
+                employee.id,
+                current_date,
+                OFF
+            ]
+            for current_date in dates
+        )
+
+        specified_off_dates = set()
+
+        for current_date in dates:
+            weekday = date.fromisoformat(
+                current_date
+            ).weekday()
+
+            if any(
+                rule.employee == employee.id
+                and rule.weekday == weekday
+                for rule in request.fixed_days_off
+            ):
+                specified_off_dates.add(current_date)
+
+        for rule in request.assignments:
+            if (
+                rule.employee == employee.id
+                and rule.shift == OFF
+                and rule.date in dates
+            ):
+                specified_off_dates.add(rule.date)
+
+        default_off_days = max(
+            0,
+            len(dates) - employee.work_days,
+        )
+        effective_off_days = max(
+            default_off_days,
+            len(specified_off_dates),
+        )
+        effective_work_days = max(
+            0,
+            len(dates) - effective_off_days,
+        )
+
+        lit = assumption(
+            f"{employee.name}：本週應上 {effective_work_days} 天"
+            f"（原設定 {employee.work_days} 天；"
+            f"固定休/排假指定 {len(specified_off_dates)} 個不重複休假日）。"
+        )
+
+        if employee.reducible:
+            diagnostic_model.Add(
+                work_count <= effective_work_days
+            ).OnlyEnforceIf(lit)
+        else:
+            diagnostic_model.Add(
+                work_count == effective_work_days
+            ).OnlyEnforceIf(lit)
+
+    # 2. 晚接早
+    for employee in employee_ids:
+        for i in range(len(dates) - 1):
+            today = dates[i]
+            tomorrow = dates[i + 1]
+            lit = assumption(
+                f"{employee_name.get(employee, employee)}："
+                f"{today} 晚班不能接 {tomorrow} 早班。"
+            )
+            diagnostic_model.AddBoolOr([
+                diagnostic_x[employee, today, NIGHT].Not(),
+                diagnostic_x[employee, tomorrow, MORNING].Not(),
+            ]).OnlyEnforceIf(lit)
+
+    # 3. 固定班
+    for rule in request.fixed_shifts:
+        if rule.employee not in employee_ids:
+            continue
+        lit = assumption(
+            f"{employee_name.get(rule.employee, rule.employee)}："
+            f"固定班 {rule.shift}。"
+        )
+        for current_date in dates:
+            for shift in [MORNING, MIDDLE, NIGHT, MEETING]:
+                if shift != rule.shift:
+                    diagnostic_model.Add(
+                        diagnostic_x[
+                            rule.employee,
+                            current_date,
+                            shift
+                        ] == 0
+                    ).OnlyEnforceIf(lit)
+
+    # 4. 固定休
+    weekday_names = [
+        "週一", "週二", "週三", "週四",
+        "週五", "週六", "週日",
+    ]
+    for rule in request.fixed_days_off:
+        if rule.employee not in employee_ids:
+            continue
+        lit = assumption(
+            f"{employee_name.get(rule.employee, rule.employee)}："
+            f"固定休 {weekday_names[rule.weekday]}。"
+        )
+        for current_date in dates:
+            if date.fromisoformat(current_date).weekday() == rule.weekday:
+                diagnostic_model.Add(
+                    diagnostic_x[
+                        rule.employee,
+                        current_date,
+                        OFF
+                    ] == 1
+                ).OnlyEnforceIf(lit)
+
+    # 5. 指定排假 / 指定班 / 會議
+    shift_display = {
+        OFF: "休假",
+        MORNING: "早班",
+        MIDDLE: "中班",
+        NIGHT: "晚班",
+        MEETING: "會議",
+    }
+    for rule in request.assignments:
+        if (
+            rule.employee not in employee_ids
+            or rule.date not in dates
+        ):
+            continue
+        lit = assumption(
+            f"{employee_name.get(rule.employee, rule.employee)}："
+            f"{rule.date} 指定"
+            f"{shift_display.get(rule.shift, rule.shift)}。"
+        )
+        diagnostic_model.Add(
+            diagnostic_x[
+                rule.employee,
+                rule.date,
+                rule.shift
+            ] == 1
+        ).OnlyEnforceIf(lit)
+
+    # 6. 每天早班至少一位 FT
+    for current_date in dates:
+        if demand[current_date, MORNING] > 0:
+            lit = assumption(
+                f"{current_date}：早班至少 1 位 FT。"
+            )
+            diagnostic_model.Add(
+                sum(
+                    diagnostic_x[
+                        employee,
+                        current_date,
+                        MORNING
+                    ]
+                    for employee in fts
+                ) >= 1
+            ).OnlyEnforceIf(lit)
+
+    # 7. 每天晚班至少一位 FT
+    for current_date in dates:
+        if demand[current_date, NIGHT] > 0:
+            lit = assumption(
+                f"{current_date}：晚班至少 1 位 FT。"
+            )
+            diagnostic_model.Add(
+                sum(
+                    diagnostic_x[
+                        employee,
+                        current_date,
+                        NIGHT
+                    ]
+                    for employee in fts
+                ) >= 1
+            ).OnlyEnforceIf(lit)
+
+    # 8. 無會議需求時不可排 MEETING
+    for current_date in dates:
+        if demand[current_date, MEETING] == 0:
+            lit = assumption(
+                f"{current_date}：沒有會議需求，不能排會議班。"
+            )
+            for employee in employee_ids:
+                diagnostic_model.Add(
+                    diagnostic_x[
+                        employee,
+                        current_date,
+                        MEETING
+                    ] == 0
+                ).OnlyEnforceIf(lit)
+
+    solver = cp_model.CpSolver()
+    solver.parameters.max_time_in_seconds = 5.0
+    status = solver.Solve(diagnostic_model)
+
+    if status in (
+        cp_model.OPTIMAL,
+        cp_model.FEASIBLE,
+    ):
+        return [
+            "硬限制單獨檢查有可行解。正式模型卻 INFEASIBLE，"
+            "代表問題來自軟性偏好 constraint 的實作；"
+            "這是程式問題，不是人力真的不足。"
+        ]
+
+    if status != cp_model.INFEASIBLE:
+        return [
+            "診斷模型沒有在時間內得到明確結論。"
+        ]
+
+    try:
+        if hasattr(
+            solver,
+            "SufficientAssumptionsForInfeasibility",
+        ):
+            core = solver.SufficientAssumptionsForInfeasibility()
+        else:
+            core = solver.sufficient_assumptions_for_infeasibility()
+    except Exception:
+        core = []
+
+    reasons = []
+    for literal_index in core:
+        description = descriptions.get(literal_index)
+        if description and description not in reasons:
+            reasons.append(description)
+
+    if reasons:
+        return [
+            "以下這組硬限制同時成立時會造成無解：",
+            *reasons,
+        ]
+
+    return [
+        "硬限制模型已確認無解，但此 OR-Tools 版本沒有回傳可讀的 assumption core。"
+    ]
+
+
+# ============================================================
 # 主要求解
 # ============================================================
 
@@ -1262,12 +1539,27 @@ def solve_schedule(
         cp_model.OPTIMAL,
         cp_model.FEASIBLE,
     ):
+        diagnostics = []
+
+        if status == cp_model.INFEASIBLE:
+            try:
+                diagnostics = diagnose_infeasible_with_assumptions(
+                    request=request,
+                    dates=dates,
+                    demand=demand,
+                )
+            except Exception as diagnostic_error:
+                diagnostics = [
+                    f"精準診斷執行失敗：{diagnostic_error}"
+                ]
+
         return {
             "success": False,
             "status": status_name,
             "message": (
                 f"排班求解失敗，OR-Tools 狀態：{status_name}。"
             ),
+            "diagnostics": diagnostics,
         }
 
     # ========================================================
