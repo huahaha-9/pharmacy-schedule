@@ -220,7 +220,8 @@ def diagnose_infeasible_inputs(
         if employee.get("reducible"):
             continue
 
-        forced_off_dates = set()
+        fixed_off_dates = set()
+        leave_dates = set()
 
         for current_date in dates:
             date_text = current_date.isoformat()
@@ -229,20 +230,29 @@ def diagnose_infeasible_inputs(
                 current_date.weekday()
                 in fixed_off_map.get(employee["id"], set())
             ):
-                forced_off_dates.add(date_text)
+                fixed_off_dates.add(date_text)
 
             if assignment_map.get(
                 (employee["id"], date_text)
             ) == "OFF":
-                forced_off_dates.add(date_text)
+                leave_dates.add(date_text)
 
-        available_days = len(dates) - len(forced_off_dates)
+        # 正式排假會降低該週應上班天數；固定休假不會降低目標。
         required_days = int(employee.get("work_days", 0) or 0)
+        effective_required_days = max(
+            0,
+            required_days - len(leave_dates),
+        )
 
-        if available_days < required_days:
+        unavailable_dates = fixed_off_dates | leave_dates
+        available_days = len(dates) - len(unavailable_dates)
+
+        if available_days < effective_required_days:
             reasons.append(
-                f"{employee['name']} 本週設定必須上 {required_days} 天，"
-                f"但固定休假 / 排假後最多只剩 {available_days} 天可排。"
+                f"{employee['name']} 原設定每週 {required_days} 天，"
+                f"本週排假 {len(leave_dates)} 天後應上 "
+                f"{effective_required_days} 天，"
+                f"但再扣除固定休假後最多只剩 {available_days} 天可排。"
             )
 
     # 2. 固定班和指定班 / 會議互撞
@@ -362,7 +372,7 @@ def diagnose_infeasible_inputs(
     if not unique_reasons:
         unique_reasons.append(
             "目前沒有找到單一明確衝突。較可能是多個硬限制組合後"
-            "造成無解，例如固定上班天數、固定班 / 休假、"
+            "造成無解，例如排假後應上天數、固定班 / 固定休假、"
             "指定班與晚接早同時壓縮可排組合。"
         )
 
