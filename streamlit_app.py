@@ -1242,6 +1242,18 @@ else:
 
     with manager_tab1:
         st.subheader("👥 基本設定")
+
+        # Supabase 是員工主資料來源；避免刪除後畫面仍拿舊 session_state。
+        ss.employees = load_employees()
+        valid_employee_ids_now = {
+            employee["id"] for employee in ss.employees
+        }
+        if (
+            ss.get("delete_employee_id") is not None
+            and ss.get("delete_employee_id") not in valid_employee_ids_now
+        ):
+            ss.pop("delete_employee_id", None)
+            ss.pop("confirm_delete_employee", None)
         # ============================================================
         # 2. 人員設定
         # ============================================================
@@ -1517,15 +1529,19 @@ else:
         # ============================================================
         
         with st.expander("🗑️ 刪除員工"):
-            delete_employee_id = st.selectbox(
-                "選擇要刪除的員工",
-                employee_ids,
-                format_func=lambda employee_id: (
-                    f"{employee_display_no.get(employee_id, '')}｜"
-                    f"{employee_name_map.get(employee_id, employee_id)}"
-                ),
-                key="delete_employee_id",
-            )
+            if not employee_ids:
+                st.info("目前沒有可刪除的員工。")
+                delete_employee_id = None
+            else:
+                delete_employee_id = st.selectbox(
+                    "選擇要刪除的員工",
+                    employee_ids,
+                    format_func=lambda employee_id: (
+                        f"{employee_display_no.get(employee_id, '')}｜"
+                        f"{employee_name_map.get(employee_id, employee_id)}"
+                    ),
+                    key="delete_employee_id",
+                )
         
             delete_employee = next(
                 (
@@ -1607,7 +1623,17 @@ else:
                         ]
                         ss.pop("schedule_result", None)
                         ss.pop("manual_schedule", None)
+
                         ss.employees = load_employees()
+                        ss.pop("delete_employee_id", None)
+                        ss.pop("confirm_delete_employee", None)
+
+                        (
+                            ss.preferred_shifts,
+                            ss.preferred_days_off,
+                            ss.consecutive_off,
+                            ss.different_shift,
+                        ) = load_persistent_preferences(ss.employees)
 
                         st.success(
                             f"✅ 已刪除 {delete_employee['name']} 與相關設定"
