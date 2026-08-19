@@ -823,6 +823,13 @@ if not st.session_state.manager_logged_in:
                 key="leave_start_time",
             )
     
+    leave_note = st.text_area(
+        "備註（選填）",
+        placeholder="例如：短會議、特殊需求、人工排班提醒。此欄不參與自動排班計算。",
+        key="leave_note",
+        height=80,
+    )
+
     if st.button(
         "💾 儲存送出",
         key="submit_leave_request",
@@ -835,6 +842,7 @@ if not st.session_state.manager_logged_in:
                 "request_type": request_type,
                 "start_time": start_time_value,
                 "end_time": end_time_value,
+                "note": leave_note.strip() or None,
             }
     
             supabase.table("leave_requests").upsert(
@@ -922,6 +930,9 @@ if not st.session_state.manager_logged_in:
                 st.write(
                     f"延後上班：{str(record['start_time'])[:5]}"
                 )
+
+            if record.get("note"):
+                st.write(f"備註：{record['note']}")
             st.markdown("#### ✏️ 修改排假")
 
             original_request_date = date.fromisoformat(record["request_date"])
@@ -1012,6 +1023,13 @@ if not st.session_state.manager_logged_in:
                         key=f"edit_start_{record['id']}",
                     )
             
+            edit_note = st.text_area(
+                "修改備註（選填）",
+                value=record.get("note") or "",
+                key=f"edit_note_{record['id']}",
+                height=80,
+            )
+
             if st.button(
                 "💾 儲存修改",
                 key=f"save_edit_{record['id']}",
@@ -1032,6 +1050,7 @@ if not st.session_state.manager_logged_in:
                         "request_type": edit_type,
                         "start_time": edit_start_time,
                         "end_time": edit_end_time,
+                        "note": edit_note.strip() or None,
                     }).eq(
                         "id",
                         record["id"],
@@ -1138,8 +1157,14 @@ if not st.session_state.manager_logged_in:
                     f"｜{str(item['start_time'])[:5]} 上班"
                 )
     
+            note_text = (
+                f"｜📝 {item['note']}"
+                if item.get("note")
+                else ""
+            )
+
             st.write(
-                f"👤 **{person_name}**｜{type_text}{extra_text}"
+                f"👤 **{person_name}**｜{type_text}{extra_text}{note_text}"
             )
     
     
@@ -1924,10 +1949,16 @@ else:
                         f"｜{str(item['start_time'])[:5]} 上班"
                     )
 
+                note_text = (
+                    f"｜📝 {item['note']}"
+                    if item.get("note")
+                    else ""
+                )
+
                 st.write(
                     f"📅 {item['request_date']}｜"
                     f"👤 {employee_name}｜"
-                    f"{request_text}{extra_text}"
+                    f"{request_text}{extra_text}{note_text}"
                 )
 
         st.divider()
@@ -2073,10 +2104,18 @@ else:
                 request_label = request_type_display.get(
                     item["request_type"], item["request_type"]
                 )
+                note_marker = (
+                    "｜📝 有備註"
+                    if item.get("note")
+                    else ""
+                )
+
                 with st.expander(
-                    f"{item['request_date']}｜{employee_label}｜{request_label}",
+                    f"{item['request_date']}｜{employee_label}｜{request_label}{note_marker}",
                     expanded=False,
                 ):
+                    if item.get("note"):
+                        st.write(f"備註：{item['note']}")
                     if st.button(
                         "🗑️ 刪除此筆",
                         key=f"manager_delete_leave_{record_id}",
@@ -2137,6 +2176,13 @@ else:
                         key="manager_late_start_time",
                     )
 
+            manager_leave_note = st.text_area(
+                "店長備註（選填）",
+                placeholder="例如：短會議、人工排班提醒。此欄不參與自動排班計算。",
+                key="manager_leave_note",
+                height=80,
+            )
+
             if st.button(
                 "💾 儲存店長排假",
                 key="manager_save_leave",
@@ -2151,6 +2197,7 @@ else:
                             "request_type": manager_leave_type,
                             "start_time": manager_start_time,
                             "end_time": manager_end_time,
+                            "note": manager_leave_note.strip() or None,
                         },
                         on_conflict="employee_id,request_date",
                     ).execute()
