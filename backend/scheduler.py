@@ -5,6 +5,8 @@ from ortools.sat.python import cp_model
 
 from backend.models import ScheduleRequest
 
+SCHEDULER_BUILD = "2026-08-19-clean-diagnostic-v2"
+
 
 # ============================================================
 # 班別常數
@@ -416,30 +418,28 @@ def add_hard_constraints(
                 ].Not(),
             ])
 
-            # --------------------------------------------------------
-        # 3. 固定班別
-        # --------------------------------------------------------
-        # 員工上班時只能排指定班別，但仍可正常休假
-    
-        for rule in request.fixed_shifts:
-    
-            if rule.employee not in employee_ids:
-                continue
-    
-            for current_date in dates:
-    
-                for shift in [MORNING, MIDDLE, NIGHT, MEETING]:
-    
-                    if shift != rule.shift:
-                        model.Add(
-                            x[
-                                rule.employee,
-                                current_date,
-                                shift
-                            ] == 0
-                        )
-    
-            
+    # --------------------------------------------------------
+    # 3. 固定班別
+    # --------------------------------------------------------
+    # 員工上班時只能排指定班別，但仍可正常休假
+
+    for rule in request.fixed_shifts:
+
+        if rule.employee not in employee_ids:
+            continue
+
+        for current_date in dates:
+
+            for shift in [MORNING, MIDDLE, NIGHT, MEETING]:
+
+                if shift != rule.shift:
+                    model.Add(
+                        x[
+                            rule.employee,
+                            current_date,
+                            shift
+                        ] == 0
+                    )
 
     # --------------------------------------------------------
     # 4. 固定休星期
@@ -1556,6 +1556,7 @@ def solve_schedule(
         return {
             "success": False,
             "status": status_name,
+            "scheduler_build": SCHEDULER_BUILD,
             "message": (
                 f"排班求解失敗，OR-Tools 狀態：{status_name}。"
             ),
@@ -1657,6 +1658,7 @@ def solve_schedule(
 
     return {
         "success": True,
+        "scheduler_build": SCHEDULER_BUILD,
         "status": (
             "OPTIMAL"
             if status == cp_model.OPTIMAL
