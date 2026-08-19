@@ -55,6 +55,106 @@ def load_employees():
         })
 
     return employees
+
+# ============================================================
+# 永久偏好：Supabase 讀寫
+# ============================================================
+
+def load_persistent_preferences(employees):
+    preferred_shifts, preferred_days_off, consecutive_off = [], [], []
+
+    for employee in employees:
+        employee_id = employee["id"]
+        if employee.get("preferred_shift") in ("MORNING", "NIGHT"):
+            preferred_shifts.append({
+                "employee": employee_id,
+                "shift": employee["preferred_shift"],
+                "weekday": None,
+            })
+        if employee.get("prefer_consecutive_off", False):
+            consecutive_off.append(employee_id)
+
+    try:
+        response = (
+            supabase.table("employee_fixed_rules")
+            .select("*")
+            .eq("rule_type", "PREFERRED_OFF")
+            .execute()
+        )
+        for row in response.data or []:
+            if row.get("weekday") is not None:
+                preferred_days_off.append({
+                    "employee": row["employee_id"],
+                    "weekday": int(row["weekday"]),
+                })
+    except Exception:
+        preferred_days_off = []
+
+    different_shift = []
+    try:
+        response = (
+            supabase.table("employee_pair_preferences")
+            .select("employee_a,employee_b")
+            .eq("preference_type", "DIFFERENT_SHIFT")
+            .execute()
+        )
+        for row in response.data or []:
+            a, b = row.get("employee_a"), row.get("employee_b")
+            if a and b and a != b:
+                different_shift.append({"employees": [a, b]})
+    except Exception:
+        different_shift = []
+
+    return preferred_shifts, preferred_days_off, consecutive_off, different_shift
+
+
+def save_preferred_days_off(employee_id, weekdays):
+    (
+        supabase.table("employee_fixed_rules")
+        .delete()
+        .eq("employee_id", employee_id)
+        .eq("rule_type", "PREFERRED_OFF")
+        .execute()
+    )
+    for weekday in sorted(set(weekdays)):
+        (
+            supabase.table("employee_fixed_rules")
+            .insert({
+                "employee_id": employee_id,
+                "rule_type": "PREFERRED_OFF",
+                "shift": None,
+                "weekday": int(weekday),
+            })
+            .execute()
+        )
+
+
+def save_different_shift_pairs(pairs):
+    (
+        supabase.table("employee_pair_preferences")
+        .delete()
+        .eq("preference_type", "DIFFERENT_SHIFT")
+        .execute()
+    )
+    seen = set()
+    for rule in pairs:
+        pair = rule.get("employees", [])
+        if len(pair) != 2 or pair[0] == pair[1]:
+            continue
+        a, b = sorted(pair)
+        if (a, b) in seen:
+            continue
+        seen.add((a, b))
+        (
+            supabase.table("employee_pair_preferences")
+            .insert({
+                "employee_a": a,
+                "employee_b": b,
+                "preference_type": "DIFFERENT_SHIFT",
+            })
+            .execute()
+        )
+
 # ============================================================
 # Supabase 連線測試
 # ============================================================
@@ -605,17 +705,21 @@ if "fixed_days_off" not in ss:
 if "assignments" not in ss:
     ss.assignments = []
 
-if "preferred_shifts" not in ss:
-    ss.preferred_shifts = []
-
-if "preferred_days_off" not in ss:
-    ss.preferred_days_off = []
-
-if "consecutive_off" not in ss:
-    ss.consecutive_off = []
-
-if "different_shift" not in ss:
-    ss.different_shift = []
+if any(
+    key not in ss
+    for key in (
+        "preferred_shifts",
+        "preferred_days_off",
+        "consecutive_off",
+        "different_shift",
+    )
+):
+    (
+        ss.preferred_shifts,
+        ss.preferred_days_off,
+        ss.consecutive_off,
+        ss.different_shift,
+    ) = load_persistent_preferences(ss.employees)
 
 # 共用顯示對照：員工端與店長端都會使用
 employee_name_map = {
@@ -1317,8 +1421,12 @@ else:
                     "hours_per_day": float(hours_per_day),
                     "can_morning": True,
                     "can_night": True,
-                    "preferred_shift": employee.get("preferred_shift"),
-                    "prefer_consecutive_off": employee.get("prefer_consecutive_off", False),
+                    "preferred_shift": (
+                        "MORNING" if prefer_morning
+                        else "NIGHT" if prefer_night
+                        else None
+                    ),
+                    "prefer_consecutive_off": bool(prefer_consecutive),
                 }
         
                 employees.append(updated_employee)
@@ -1519,8 +1627,26 @@ else:
                         ),
                     }).execute()
         
+                for employee in employees:
+                    employee_preferred_off = [
+                        int(rule["weekday"])
+                        for rule in ss.preferred_days_off
+                        if rule.get("employee") == employee["id"]
+                        and rule.get("weekday") is not None
+                    ]
+                    save_preferred_days_off(
+                        employee["id"],
+                        employee_preferred_off,
+                    )
+
                 ss.employees = load_employees()
-                st.success("✅ 員工設定已儲存，姓名與選項已同步更新")
+                (
+                    ss.preferred_shifts,
+                    ss.preferred_days_off,
+                    ss.consecutive_off,
+                    ss.different_shift,
+                ) = load_persistent_preferences(ss.employees)
+                st.success("✅ 員工資料與偏好已永久儲存")
                 st.rerun()
         
             except Exception as error:
@@ -2604,7 +2730,8 @@ with manager_tab1:
                             ss.different_shift[i] = {
                                 "employees": [employee_a, employee_b]
                             }
-                            st.success("✅ 已儲存避免同班設定")
+                            save_different_shift_pairs(ss.different_shift)
+                            st.success("✅ 已永久儲存避免同班設定")
                             st.rerun()
                 with col_delete:
                     if st.button(
@@ -2615,7 +2742,12 @@ with manager_tab1:
 
         if different_delete is not None:
             ss.different_shift.pop(different_delete)
-            st.rerun()
+            try:
+                save_different_shift_pairs(ss.different_shift)
+                st.rerun()
+            except Exception as error:
+                st.error("❌ 刪除避免同班失敗")
+                st.exception(error)
 
         with st.expander("＋ 新增避免同班", expanded=False):
             if len(employee_ids) >= 2:
@@ -2652,8 +2784,14 @@ with manager_tab1:
                         ss.different_shift.append({
                             "employees": [new_a, new_b]
                         })
-                        st.success("✅ 已新增避免同班設定")
-                        st.rerun()
+                        try:
+                            save_different_shift_pairs(ss.different_shift)
+                            st.success("✅ 已永久新增避免同班設定")
+                            st.rerun()
+                        except Exception as error:
+                            ss.different_shift.pop()
+                            st.error("❌ 儲存避免同班失敗，請先執行 Supabase SQL migration")
+                            st.exception(error)
             else:
                 st.warning("至少需要兩位員工。")
 
