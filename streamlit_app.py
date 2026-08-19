@@ -3166,6 +3166,49 @@ with manager_tab3:
                         "weekday": int(rule["weekday"]),
                     })
 
+        # ========================================================
+        # 10-6-1 讀取緊鄰上一週歷史，供跨週晚接早 / 七休一
+        # ========================================================
+        previous_schedule_payload = []
+
+        try:
+            previous_history_response = (
+                supabase.table("schedule_history")
+                .select("week_start,week_end,schedule_json")
+                .lt("week_start", start_date.isoformat())
+                .order("week_start", desc=True)
+                .limit(1)
+                .execute()
+            )
+
+            if previous_history_response.data:
+                previous_row = previous_history_response.data[0]
+
+                if (
+                    date.fromisoformat(previous_row["week_end"])
+                    + timedelta(days=1)
+                    == start_date
+                ):
+                    for employee_result in (
+                        previous_row.get("schedule_json") or []
+                    ):
+                        employee_id = employee_result.get("employee_id")
+
+                        if not employee_id:
+                            continue
+
+                        for day in employee_result.get("days", []):
+                            if day.get("date") and day.get("shift"):
+                                previous_schedule_payload.append({
+                                    "employee": employee_id,
+                                    "date": day["date"],
+                                    "shift": day["shift"],
+                                })
+        except Exception as error:
+            errors.append(
+                f"無法讀取上一週歷史班表，跨週限制無法安全檢查：{error}"
+            )
+
         payload = {
 
             "start_date":
@@ -3246,6 +3289,9 @@ with manager_tab3:
                 "different_shift":
                     ss.different_shift,
             },
+
+            "previous_schedule":
+                previous_schedule_payload,
         }
 
 
@@ -3284,6 +3330,9 @@ with manager_tab3:
                     ),
                     "assignments": copy.deepcopy(
                         assignments_payload
+                    ),
+                    "previous_schedule": copy.deepcopy(
+                        previous_schedule_payload
                     ),
                 }
 
