@@ -5,7 +5,7 @@ from ortools.sat.python import cp_model
 
 from backend.models import ScheduleRequest
 
-SCHEDULER_BUILD = "2026-08-19-clean-diagnostic-v2"
+SCHEDULER_BUILD = "2026-08-19-zero-demand-v3"
 
 
 # ============================================================
@@ -485,6 +485,22 @@ def add_hard_constraints(
                 rule.shift
             ] == 1
         )
+
+    # --------------------------------------------------------
+    # 5-1. 需求為 0 的一般班別不可排人
+    # --------------------------------------------------------
+    # 0 代表店長不開這個班，避免多餘人力被塞進需求為 0 的班別。
+    for current_date in dates:
+        for shift in [MORNING, MIDDLE, NIGHT]:
+            if demand.get((current_date, shift), 0) == 0:
+                for employee in employee_ids:
+                    model.Add(
+                        x[
+                            employee,
+                            current_date,
+                            shift
+                        ] == 0
+                    )
 
     # --------------------------------------------------------
     # 6. 早班至少一位 FT
