@@ -5,7 +5,7 @@ from ortools.sat.python import cp_model
 
 from backend.models import ScheduleRequest
 
-SCHEDULER_BUILD = "2026-08-19-zero-demand-audited-v4"
+SCHEDULER_BUILD = "2026-08-19-crossweek-v5"
 
 
 # ============================================================
@@ -316,6 +316,71 @@ def add_hard_constraints(
 
     employee_ids = groups["employees"]
     fts = groups["fts"]
+
+    # 上一週歷史資料只讀，不改本週上班天數額度。
+    previous_by_employee = {}
+    for day in request.previous_schedule:
+        if day.employee in employee_ids:
+            previous_by_employee.setdefault(
+                day.employee, []
+            ).append(day)
+
+    # --------------------------------------------------------
+    # 0. 跨週晚接早 + 七休一
+    # --------------------------------------------------------
+    first_date = date.fromisoformat(dates[0])
+    previous_date_text = (
+        first_date - timedelta(days=1)
+    ).isoformat()
+
+    for employee in employee_ids:
+        history_days = sorted(
+            previous_by_employee.get(employee, []),
+            key=lambda item: item.date,
+        )
+        history_map = {
+            item.date: item.shift
+            for item in history_days
+        }
+
+        # 跨週晚接早：上一天 NIGHT -> 本週第一天不可 MORNING
+        if history_map.get(previous_date_text) == NIGHT:
+            model.Add(
+                x[employee, dates[0], MORNING] == 0
+            )
+
+        # 七休一：計算本週開始前連續上班尾段。
+        trailing_work_days = 0
+        cursor = first_date - timedelta(days=1)
+
+        while trailing_work_days < 6:
+            shift = history_map.get(cursor.isoformat())
+            if shift is None or shift == OFF:
+                break
+            trailing_work_days += 1
+            cursor -= timedelta(days=1)
+
+        if trailing_work_days > 0:
+            days_until_required_off = 7 - trailing_work_days
+            boundary_dates = dates[:days_until_required_off]
+
+            # 在形成連續第 7 天以前，至少要休 1 天。
+            model.Add(
+                sum(
+                    1 - x[employee, day, OFF]
+                    for day in boundary_dates
+                )
+                <= len(boundary_dates) - 1
+            )
+
+    # 本週本身也不能連續工作滿 7 天。
+    for employee in employee_ids:
+        model.Add(
+            sum(
+                1 - x[employee, current_date, OFF]
+                for current_date in dates
+            ) <= 6
+        )
 
     # --------------------------------------------------------
     # 1. 上班天數
@@ -1226,6 +1291,19 @@ def diagnose_infeasible_with_assumptions(
 
     descriptions = {}
 
+    # 上一週歷史：同步正式模型的跨週硬限制
+    previous_by_employee = {}
+    for day in request.previous_schedule:
+        if day.employee in employee_ids:
+            previous_by_employee.setdefault(
+                day.employee, []
+            ).append(day)
+
+    first_date = date.fromisoformat(dates[0])
+    previous_date_text = (
+        first_date - timedelta(days=1)
+    ).isoformat()
+
     def assumption(description):
         lit = diagnostic_model.NewBoolVar(
             f"diag_{len(descriptions)}"
@@ -1236,6 +1314,62 @@ def diagnose_infeasible_with_assumptions(
             diagnostic_model.add_assumption(lit)
         descriptions[lit.Index()] = description
         return lit
+
+    # 0. 跨週晚接早 + 七休一（完全複製正式規則）
+    for employee in employee_ids:
+        history_days = sorted(
+            previous_by_employee.get(employee, []),
+            key=lambda item: item.date,
+        )
+        history_map = {
+            item.date: item.shift
+            for item in history_days
+        }
+
+        if history_map.get(previous_date_text) == NIGHT:
+            lit = assumption(
+                f"{employee_name.get(employee, employee)}："
+                f"{previous_date_text} 晚班不能接 {dates[0]} 早班。"
+            )
+            diagnostic_model.Add(
+                diagnostic_x[employee, dates[0], MORNING] == 0
+            ).OnlyEnforceIf(lit)
+
+        trailing_work_days = 0
+        cursor = first_date - timedelta(days=1)
+
+        while trailing_work_days < 6:
+            shift = history_map.get(cursor.isoformat())
+            if shift is None or shift == OFF:
+                break
+            trailing_work_days += 1
+            cursor -= timedelta(days=1)
+
+        if trailing_work_days > 0:
+            days_until_required_off = 7 - trailing_work_days
+            boundary_dates = dates[:days_until_required_off]
+            lit = assumption(
+                f"{employee_name.get(employee, employee)}："
+                f"跨週已連上 {trailing_work_days} 天，"
+                f"本週前 {days_until_required_off} 天內至少需休 1 天。"
+            )
+            diagnostic_model.Add(
+                sum(
+                    1 - diagnostic_x[employee, day, OFF]
+                    for day in boundary_dates
+                )
+                <= len(boundary_dates) - 1
+            ).OnlyEnforceIf(lit)
+
+        lit = assumption(
+            f"{employee_name.get(employee, employee)}：本週不可連續工作滿 7 天。"
+        )
+        diagnostic_model.Add(
+            sum(
+                1 - diagnostic_x[employee, current_date, OFF]
+                for current_date in dates
+            ) <= 6
+        ).OnlyEnforceIf(lit)
 
     # 1. 每週上班天數（完全複製正式規則）
     for employee in request.employees:

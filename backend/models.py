@@ -205,6 +205,16 @@ class PreferenceConfig(BaseModel):
 
 
 # ============================================================
+# 12-1. 上一週歷史班表（只供跨週硬限制）
+# ============================================================
+
+class PreviousScheduleDay(BaseModel):
+    employee: str
+    date: str
+    shift: ShiftType
+
+
+# ============================================================
 # 13. 完整排班 Request
 # ============================================================
 
@@ -246,5 +256,10 @@ class ScheduleRequest(BaseModel):
     # 偏好
     preferences: PreferenceConfig = Field(
         default_factory=PreferenceConfig
+    )
+
+    # 上一週歷史班表：只用於跨週晚接早 / 七休一
+    previous_schedule: List[PreviousScheduleDay] = Field(
+        default_factory=list
     )
 
