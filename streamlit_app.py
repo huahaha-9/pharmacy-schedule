@@ -719,6 +719,13 @@ if not st.session_state.manager_logged_in:
                 key="leave_start_time",
             )
     
+    leave_note = st.text_area(
+        "備註（選填）",
+        placeholder="例如：短會議、私人行程、需要店長人工留意的事項。此欄不參與自動排班計算。",
+        key="leave_note",
+        height=70,
+    )
+
     if st.button(
         "💾 儲存送出",
         key="submit_leave_request",
@@ -731,6 +738,7 @@ if not st.session_state.manager_logged_in:
                 "request_type": request_type,
                 "start_time": start_time_value,
                 "end_time": end_time_value,
+                "note": leave_note.strip() or None,
             }
     
             supabase.table("leave_requests").upsert(
@@ -797,6 +805,9 @@ if not st.session_state.manager_logged_in:
     
         elif record_type == "NIGHT" and record.get("start_time"):
             title += f"｜{str(record['start_time'])[:5]} 上班"
+
+        if record.get("note"):
+            title += "｜📝 有備註"
     
     
         with st.expander(title):
@@ -818,6 +829,10 @@ if not st.session_state.manager_logged_in:
                 st.write(
                     f"延後上班：{str(record['start_time'])[:5]}"
                 )
+
+            if record.get("note"):
+                st.write(f"📝 備註：{record['note']}")
+
             st.markdown("#### ✏️ 修改排假")
 
             original_request_date = date.fromisoformat(record["request_date"])
@@ -908,6 +923,13 @@ if not st.session_state.manager_logged_in:
                         key=f"edit_start_{record['id']}",
                     )
             
+            edit_note = st.text_area(
+                "修改備註（選填）",
+                value=record.get("note") or "",
+                key=f"edit_note_{record['id']}",
+                height=70,
+            )
+
             if st.button(
                 "💾 儲存修改",
                 key=f"save_edit_{record['id']}",
@@ -928,6 +950,7 @@ if not st.session_state.manager_logged_in:
                         "request_type": edit_type,
                         "start_time": edit_start_time,
                         "end_time": edit_end_time,
+                        "note": edit_note.strip() or None,
                     }).eq(
                         "id",
                         record["id"],
@@ -1034,8 +1057,14 @@ if not st.session_state.manager_logged_in:
                     f"｜{str(item['start_time'])[:5]} 上班"
                 )
     
+            note_text = (
+                f"｜📝 {item['note']}"
+                if item.get("note")
+                else ""
+            )
+
             st.write(
-                f"👤 **{person_name}**｜{type_text}{extra_text}"
+                f"👤 **{person_name}**｜{type_text}{extra_text}{note_text}"
             )
     
     
@@ -1798,10 +1827,16 @@ else:
                         f"｜{str(item['start_time'])[:5]} 上班"
                     )
 
+                note_text = (
+                    f"｜📝 {item['note']}"
+                    if item.get("note")
+                    else ""
+                )
+
                 st.write(
                     f"📅 {item['request_date']}｜"
                     f"👤 {employee_name}｜"
-                    f"{request_text}{extra_text}"
+                    f"{request_text}{extra_text}{note_text}"
                 )
 
         st.divider()
@@ -1947,10 +1982,19 @@ else:
                 request_label = request_type_display.get(
                     item["request_type"], item["request_type"]
                 )
+                manager_note_marker = (
+                    "｜📝 有備註"
+                    if item.get("note")
+                    else ""
+                )
+
                 with st.expander(
-                    f"{item['request_date']}｜{employee_label}｜{request_label}",
+                    f"{item['request_date']}｜{employee_label}｜{request_label}{manager_note_marker}",
                     expanded=False,
                 ):
+                    if item.get("note"):
+                        st.write(f"📝 備註：{item['note']}")
+
                     if st.button(
                         "🗑️ 刪除此筆",
                         key=f"manager_delete_leave_{record_id}",
@@ -2011,6 +2055,13 @@ else:
                         key="manager_late_start_time",
                     )
 
+            manager_leave_note = st.text_area(
+                "店長備註（選填）",
+                placeholder="例如：14:00–15:00 有短會議、人工調整提醒。此欄不參與自動排班計算。",
+                key="manager_leave_note",
+                height=70,
+            )
+
             if st.button(
                 "💾 儲存店長排假",
                 key="manager_save_leave",
@@ -2025,6 +2076,7 @@ else:
                             "request_type": manager_leave_type,
                             "start_time": manager_start_time,
                             "end_time": manager_end_time,
+                            "note": manager_leave_note.strip() or None,
                         },
                         on_conflict="employee_id,request_date",
                     ).execute()
@@ -3170,33 +3222,53 @@ with manager_tab3:
                 "可以檢查固定班、固定休假、排假、會議或每週上班天數是否互相衝突。"
             )
 
-            last_inputs = ss.get("last_schedule_inputs")
+            # 優先顯示 scheduler 回傳的 assumption 精準診斷。
+            # 這裡只改「顯示診斷」；不重新求解、不修改正式排班限制。
+            backend_diagnostics = result.get("diagnostics") or []
 
-            if last_inputs:
-                st.markdown("### 🔎 無解原因診斷")
-
-                diagnostic_reasons = diagnose_infeasible_inputs(
-                    employees=last_inputs["employees"],
-                    start_date=date.fromisoformat(
-                        last_inputs["start_date"]
-                    ),
-                    end_date=date.fromisoformat(
-                        last_inputs["end_date"]
-                    ),
-                    staffing=last_inputs["staffing"],
-                    fixed_shifts=last_inputs["fixed_shifts"],
-                    fixed_days_off=last_inputs["fixed_days_off"],
-                    assignments=last_inputs["assignments"],
+            if result.get("scheduler_build"):
+                st.caption(
+                    f"Solver 版本：{result['scheduler_build']}"
                 )
 
-                for reason in diagnostic_reasons:
+            st.markdown("### 🔎 無解原因診斷")
+
+            if backend_diagnostics:
+                for reason in backend_diagnostics:
                     st.write(f"• {reason}")
 
                 st.caption(
-                    "這是依目前硬限制做的可讀性診斷。"
-                    "OR-Tools 的 INFEASIBLE 本身不一定能指出唯一一條原因，"
-                    "所以若沒有單一衝突，會提示最可能的限制組合。"
+                    "以上由後端第二個只含硬限制的 CP-SAT 診斷模型產生。"
+                    "診斷只用來找出造成無解的硬限制組合，不會修改正式班表計算。"
                 )
+
+            else:
+                # 舊版／非 INFEASIBLE 狀態沒有後端 diagnostics 時才使用前端備援診斷。
+                last_inputs = ss.get("last_schedule_inputs")
+
+                if last_inputs:
+                    diagnostic_reasons = diagnose_infeasible_inputs(
+                        employees=last_inputs["employees"],
+                        start_date=date.fromisoformat(
+                            last_inputs["start_date"]
+                        ),
+                        end_date=date.fromisoformat(
+                            last_inputs["end_date"]
+                        ),
+                        staffing=last_inputs["staffing"],
+                        fixed_shifts=last_inputs["fixed_shifts"],
+                        fixed_days_off=last_inputs["fixed_days_off"],
+                        assignments=last_inputs["assignments"],
+                    )
+
+                    for reason in diagnostic_reasons:
+                        st.write(f"• {reason}")
+
+                    st.caption(
+                        "後端本次沒有回傳精準診斷，因此顯示前端備援診斷。"
+                    )
+                else:
+                    st.write("• 本次沒有可用的診斷資料。")
 
 
         # ========================================================
