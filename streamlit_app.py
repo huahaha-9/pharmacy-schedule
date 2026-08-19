@@ -220,7 +220,7 @@ def diagnose_infeasible_inputs(
         if employee.get("reducible"):
             continue
 
-        specified_off_dates = set()
+        forced_off_dates = set()
 
         for current_date in dates:
             date_text = current_date.isoformat()
@@ -229,43 +229,20 @@ def diagnose_infeasible_inputs(
                 current_date.weekday()
                 in fixed_off_map.get(employee["id"], set())
             ):
-                specified_off_dates.add(date_text)
+                forced_off_dates.add(date_text)
 
             if assignment_map.get(
                 (employee["id"], date_text)
             ) == "OFF":
-                specified_off_dates.add(date_text)
+                forced_off_dates.add(date_text)
 
-        required_days = int(
-            employee.get("work_days", 0) or 0
-        )
+        available_days = len(dates) - len(forced_off_dates)
+        required_days = int(employee.get("work_days", 0) or 0)
 
-        default_off_days = max(
-            0,
-            len(dates) - required_days,
-        )
-
-        effective_off_days = max(
-            default_off_days,
-            len(specified_off_dates),
-        )
-
-        effective_required_days = max(
-            0,
-            len(dates) - effective_off_days,
-        )
-
-        available_days = (
-            len(dates) - len(specified_off_dates)
-        )
-
-        if available_days < effective_required_days:
+        if available_days < required_days:
             reasons.append(
-                f"{employee['name']} 原設定每週 {required_days} 天，"
-                f"本週固定休 / 排假共指定 "
-                f"{len(specified_off_dates)} 個不重複休假日，"
-                f"因此本週應上 {effective_required_days} 天，"
-                f"但目前最多只剩 {available_days} 天可排。"
+                f"{employee['name']} 本週設定必須上 {required_days} 天，"
+                f"但固定休假 / 排假後最多只剩 {available_days} 天可排。"
             )
 
     # 2. 固定班和指定班 / 會議互撞
@@ -385,7 +362,7 @@ def diagnose_infeasible_inputs(
     if not unique_reasons:
         unique_reasons.append(
             "目前沒有找到單一明確衝突。較可能是多個硬限制組合後"
-            "造成無解，例如本週應上天數、固定班 / 固定休假、"
+            "造成無解，例如固定上班天數、固定班 / 休假、"
             "指定班與晚接早同時壓縮可排組合。"
         )
 
@@ -742,13 +719,6 @@ if not st.session_state.manager_logged_in:
                 key="leave_start_time",
             )
     
-    leave_note = st.text_area(
-        "備註（選填）",
-        placeholder="此欄只供店長查看，不參與排班計算。",
-        key="leave_note",
-        height=80,
-    )
-
     if st.button(
         "💾 儲存送出",
         key="submit_leave_request",
@@ -761,7 +731,6 @@ if not st.session_state.manager_logged_in:
                 "request_type": request_type,
                 "start_time": start_time_value,
                 "end_time": end_time_value,
-                "note": leave_note.strip() or None,
             }
     
             supabase.table("leave_requests").upsert(
@@ -849,10 +818,6 @@ if not st.session_state.manager_logged_in:
                 st.write(
                     f"延後上班：{str(record['start_time'])[:5]}"
                 )
-
-            if record.get("note"):
-                st.write(f"備註：{record['note']}")
-
             st.markdown("#### ✏️ 修改排假")
 
             original_request_date = date.fromisoformat(record["request_date"])
@@ -943,13 +908,6 @@ if not st.session_state.manager_logged_in:
                         key=f"edit_start_{record['id']}",
                     )
             
-            edit_note = st.text_area(
-                "修改備註（選填）",
-                value=record.get("note") or "",
-                key=f"edit_note_{record['id']}",
-                height=80,
-            )
-
             if st.button(
                 "💾 儲存修改",
                 key=f"save_edit_{record['id']}",
@@ -970,7 +928,6 @@ if not st.session_state.manager_logged_in:
                         "request_type": edit_type,
                         "start_time": edit_start_time,
                         "end_time": edit_end_time,
-                        "note": edit_note.strip() or None,
                     }).eq(
                         "id",
                         record["id"],
@@ -1077,15 +1034,8 @@ if not st.session_state.manager_logged_in:
                     f"｜{str(item['start_time'])[:5]} 上班"
                 )
     
-            note_text = (
-                f"｜備註：{item['note']}"
-                if item.get("note")
-                else ""
-            )
-
             st.write(
-                f"👤 **{person_name}**｜"
-                f"{type_text}{extra_text}{note_text}"
+                f"👤 **{person_name}**｜{type_text}{extra_text}"
             )
     
     
@@ -1848,16 +1798,10 @@ else:
                         f"｜{str(item['start_time'])[:5]} 上班"
                     )
 
-                note_text = (
-                    f"｜備註：{item['note']}"
-                    if item.get("note")
-                    else ""
-                )
-
                 st.write(
                     f"📅 {item['request_date']}｜"
                     f"👤 {employee_name}｜"
-                    f"{request_text}{extra_text}{note_text}"
+                    f"{request_text}{extra_text}"
                 )
 
         st.divider()
@@ -2007,9 +1951,6 @@ else:
                     f"{item['request_date']}｜{employee_label}｜{request_label}",
                     expanded=False,
                 ):
-                    if item.get("note"):
-                        st.write(f"備註：{item['note']}")
-
                     if st.button(
                         "🗑️ 刪除此筆",
                         key=f"manager_delete_leave_{record_id}",
@@ -2070,13 +2011,6 @@ else:
                         key="manager_late_start_time",
                     )
 
-            manager_leave_note = st.text_area(
-                "店長備註（選填）",
-                placeholder="例如：短會議、人工排班提醒。此欄不參與自動計算。",
-                key="manager_leave_note",
-                height=80,
-            )
-
             if st.button(
                 "💾 儲存店長排假",
                 key="manager_save_leave",
@@ -2091,7 +2025,6 @@ else:
                             "request_type": manager_leave_type,
                             "start_time": manager_start_time,
                             "end_time": manager_end_time,
-                            "note": manager_leave_note.strip() or None,
                         },
                         on_conflict="employee_id,request_date",
                     ).execute()
@@ -2558,7 +2491,18 @@ else:
                         on_conflict="week_start,weekday",
                     ).execute()
 
-                st.success("✅ 本週人力配置已儲存")
+                # 人力需求一旦修改，舊班表與舊的「實際 / 需求」已失效。
+                # 清除舊結果，避免畫面繼續顯示上一輪需求，造成看起來像 solver 沒吃到新設定。
+                for stale_key in (
+                    "schedule_result",
+                    "manual_schedule",
+                    "schedule_requirements",
+                    "last_schedule_inputs",
+                ):
+                    ss.pop(stale_key, None)
+
+                st.success("✅ 本週人力配置已儲存；請到『生成班表』重新排班。")
+                st.rerun()
 
             except Exception as error:
                 st.error("❌ 儲存本週人力配置失敗")
@@ -3222,55 +3166,37 @@ with manager_tab3:
                 )
             )
 
-            if result.get("scheduler_build"):
-                st.caption(
-                    f"Solver 版本：{result['scheduler_build']}"
-                )
-
             st.warning(
                 "可以檢查固定班、固定休假、排假、會議或每週上班天數是否互相衝突。"
             )
 
-            st.markdown("### 🔎 無解原因診斷")
+            last_inputs = ss.get("last_schedule_inputs")
 
-            solver_diagnostics = (
-                result.get("diagnostics")
-                or []
-            )
+            if last_inputs:
+                st.markdown("### 🔎 無解原因診斷")
 
-            if solver_diagnostics:
-                for reason in solver_diagnostics:
+                diagnostic_reasons = diagnose_infeasible_inputs(
+                    employees=last_inputs["employees"],
+                    start_date=date.fromisoformat(
+                        last_inputs["start_date"]
+                    ),
+                    end_date=date.fromisoformat(
+                        last_inputs["end_date"]
+                    ),
+                    staffing=last_inputs["staffing"],
+                    fixed_shifts=last_inputs["fixed_shifts"],
+                    fixed_days_off=last_inputs["fixed_days_off"],
+                    assignments=last_inputs["assignments"],
+                )
+
+                for reason in diagnostic_reasons:
                     st.write(f"• {reason}")
 
                 st.caption(
-                    "這是由第二個只含硬限制的 CP-SAT 診斷模型產生。"
-                    "它不會更改正式排班結果。"
+                    "這是依目前硬限制做的可讀性診斷。"
+                    "OR-Tools 的 INFEASIBLE 本身不一定能指出唯一一條原因，"
+                    "所以若沒有單一衝突，會提示最可能的限制組合。"
                 )
-
-            else:
-                last_inputs = ss.get("last_schedule_inputs")
-
-                if last_inputs:
-                    diagnostic_reasons = diagnose_infeasible_inputs(
-                        employees=last_inputs["employees"],
-                        start_date=date.fromisoformat(
-                            last_inputs["start_date"]
-                        ),
-                        end_date=date.fromisoformat(
-                            last_inputs["end_date"]
-                        ),
-                        staffing=last_inputs["staffing"],
-                        fixed_shifts=last_inputs["fixed_shifts"],
-                        fixed_days_off=last_inputs["fixed_days_off"],
-                        assignments=last_inputs["assignments"],
-                    )
-
-                    st.info(
-                        "⚠️ 後端沒有回傳精準 diagnostics，以下是前端備援診斷。"
-                    )
-
-                    for reason in diagnostic_reasons:
-                        st.write(f"• {reason}")
 
 
         # ========================================================
@@ -3287,11 +3213,6 @@ with manager_tab3:
 
                 st.caption(
                     f"求解狀態：{result['status']}"
-                )
-
-            if result.get("scheduler_build"):
-                st.caption(
-                    f"Solver 版本：{result['scheduler_build']}"
                 )
 
 
