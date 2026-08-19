@@ -330,20 +330,38 @@ def add_hard_constraints(
             for current_date in dates
         )
 
+        # 正式排假（AssignmentRule shift == OFF）會降低該週應上班天數。
+        # 例如原設定 5 天，本週正式排假 3 天 -> 本週目標 2 天。
+        # 固定休假不在這裡扣除；固定休假仍維持原本的硬限制語意。
+        leave_dates = {
+            rule.date
+            for rule in request.assignments
+            if (
+                rule.employee == employee.id
+                and rule.shift == OFF
+                and rule.date in dates
+            )
+        }
+
+        effective_work_days = max(
+            0,
+            employee.work_days - len(leave_dates),
+        )
+
         # 可減班人員：
-        # 不可超過設定的上班天數
+        # 排假後不可超過調整後的上班天數
         if employee.reducible:
 
             model.Add(
-                work_count <= employee.work_days
+                work_count <= effective_work_days
             )
 
         # 不可減班：
-        # 上班天數固定
+        # 排假後上班天數固定為調整後的目標
         else:
 
             model.Add(
-                work_count == employee.work_days
+                work_count == effective_work_days
             )
 
     # --------------------------------------------------------
