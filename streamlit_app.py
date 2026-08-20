@@ -3754,6 +3754,25 @@ with manager_tab3:
                 )
 
 
+            if schedule_data:
+                st.markdown("### 📊 每日人力與工時")
+                daily_stats = []
+                schedule_for_daily_stats = ss.get("manual_schedule", schedule_data)
+                for current_date in [day["date"] for day in schedule_data[0].get("days", [])]:
+                    counts = {"MORNING": 0, "MIDDLE": 0, "NIGHT": 0}
+                    total_hours = 0.0
+                    for employee_result in schedule_for_daily_stats:
+                        for day in employee_result.get("days", []):
+                            if day.get("date") == current_date and day.get("shift") in counts:
+                                counts[day["shift"]] += 1
+                                total_hours += float(day.get("hours", 0) or 0)
+                    daily_stats.append({
+                        "日期": current_date, "早班": counts["MORNING"], "中班": counts["MIDDLE"],
+                        "晚班": counts["NIGHT"], "上班人數": sum(counts.values()),
+                        "當日總工時": round(total_hours, 1),
+                    })
+                st.dataframe(daily_stats, use_container_width=True, hide_index=True)
+
             # ====================================================
             # 11-2 店長單日修改班表
             # ====================================================
