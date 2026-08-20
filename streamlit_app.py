@@ -328,35 +328,11 @@ def diagnose_infeasible_inputs(
             )
         ] = rule["shift"]
 
-    # 1. 不可減班員工：可排日期不足以達到固定上班天數
-    for employee in employees:
-        if employee.get("reducible"):
-            continue
-
-        forced_off_dates = set()
-
-        for current_date in dates:
-            date_text = current_date.isoformat()
-
-            if (
-                current_date.weekday()
-                in fixed_off_map.get(employee["id"], set())
-            ):
-                forced_off_dates.add(date_text)
-
-            if assignment_map.get(
-                (employee["id"], date_text)
-            ) == "OFF":
-                forced_off_dates.add(date_text)
-
-        available_days = len(dates) - len(forced_off_dates)
-        required_days = int(employee.get("work_days", 0) or 0)
-
-        if available_days < required_days:
-            reasons.append(
-                f"{employee['name']} 本週設定必須上 {required_days} 天，"
-                f"但固定休假 / 排假後最多只剩 {available_days} 天可排。"
-            )
+    # 1. 員工自行排假不視為「減班違規」
+    # 規則與 Solver 一致：
+    # 原本週休額度內的排假只是指定休哪天；
+    # 超過原休假額度的排假，會直接降低本週應上班天數。
+    # 因此此處不再用「不可減班 / 原 work_days」判定排假衝突。
 
     # 2. 固定班和指定班 / 會議互撞
     for rule in assignments:
@@ -474,9 +450,10 @@ def diagnose_infeasible_inputs(
 
     if not unique_reasons:
         unique_reasons.append(
-            "目前沒有找到單一明確衝突。較可能是多個硬限制組合後"
-            "造成無解，例如固定上班天數、固定班 / 休假、"
-            "指定班與晚接早同時壓縮可排組合。"
+            "目前沒有從前端備援檢查找到單一明確衝突。"
+            "請以後端精準 diagnostics 為準；常見原因包含"
+            "精確人力容量、固定班／固定休、禁止班別、指定班、"
+            "FT 覆蓋、晚接早或跨週七休一的組合衝突。"
         )
 
     return unique_reasons
@@ -2455,33 +2432,14 @@ else:
                 if st.button("💾 儲存禁止班別", use_container_width=True,
                              disabled=(forbidden_employee is None), key="save_forbidden_shift"):
                     try:
-                        forbidden_weekday_value = WEEKDAY_MAP[
-                            forbidden_weekday_label
-                        ]
-
-                        existing_forbidden = load_forbidden_shifts()
-
-                        duplicate_forbidden = any(
-                            row.get("employee_id") == forbidden_employee
-                            and row.get("shift") == forbidden_shift_code
-                            and int(row.get("weekday")) == forbidden_weekday_value
-                            for row in existing_forbidden
-                            if row.get("weekday") is not None
-                        )
-
-                        if duplicate_forbidden:
-                            st.warning(
-                                "⚠️ 這筆禁止班別已經存在，不會重複新增。"
-                            )
-                        else:
-                            supabase.table("employee_fixed_rules").insert({
-                                "employee_id": forbidden_employee,
-                                "rule_type": "FORBIDDEN_SHIFT",
-                                "shift": forbidden_shift_code,
-                                "weekday": forbidden_weekday_value,
-                            }).execute()
-                            st.success("✅ 禁止班別已儲存")
-                            st.rerun()
+                        supabase.table("employee_fixed_rules").insert({
+                            "employee_id": forbidden_employee,
+                            "rule_type": "FORBIDDEN_SHIFT",
+                            "shift": forbidden_shift_code,
+                            "weekday": WEEKDAY_MAP[forbidden_weekday_label],
+                        }).execute()
+                        st.success("✅ 禁止班別已儲存")
+                        st.rerun()
                     except Exception as error:
                         st.error("❌ 儲存禁止班別失敗")
                         st.exception(error)
@@ -3611,11 +3569,9 @@ with manager_tab3:
             )
 
             st.caption(
-                "人數需求本身允許以『缺口』處理；"
-                "但早班需求只要 > 0，就仍有『至少 1 位 FT』硬限制，"
-                "晚班需求只要 > 0 也一樣。"
-                "因此把需求從 3 改成 1 不一定會解除 INFEASIBLE；"
-                "要測 FT 硬限制是否解除，該班需求需設為 0。"
+                "目前早／中／晚人力採『精確人數』："
+                "實際排班人數必須等於店長設定，不能少也不能超。"
+                "另外早班與晚班需求只要 > 0，仍各需要至少 1 位 FT。"
             )
 
             if result.get("scheduler_build"):
