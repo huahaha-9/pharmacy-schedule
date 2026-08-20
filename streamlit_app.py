@@ -60,6 +60,19 @@ def load_employees():
 # 永久偏好：Supabase 讀寫
 # ============================================================
 
+def load_forbidden_shifts():
+    try:
+        response = (
+            supabase.table("employee_fixed_rules")
+            .select("id,employee_id,rule_type,shift,weekday")
+            .eq("rule_type", "FORBIDDEN_SHIFT")
+            .execute()
+        )
+        return response.data or []
+    except Exception:
+        return []
+
+
 def load_persistent_preferences(employees):
     preferred_shifts, preferred_days_off, consecutive_off = [], [], []
 
@@ -2425,6 +2438,53 @@ else:
                     st.exception(error)
 
 
+        st.markdown("#### 🚫 固定不能上的班")
+        st.caption("永久設定：儲存一次後每週自動套用，不需要每週重新設定。")
+        with st.expander("🚫 禁止班別"):
+            st.caption("設定某員工每週某一天絕對不能上的班別。")
+            if employee_ids:
+                forbidden_employee = st.selectbox(
+                    "員工", employee_ids, index=None, placeholder="請選擇員工",
+                    format_func=lambda employee_id: employee_name_map.get(employee_id, employee_id),
+                    key=f"forbidden_employee_{'_'.join(employee_ids)}",
+                )
+                forbidden_weekday_label = st.selectbox("星期", list(WEEKDAY_MAP.keys()), key="forbidden_weekday")
+                forbidden_shift_label = st.selectbox("禁止班別", ["早班","中班","晚班"], key="forbidden_shift")
+                forbidden_shift_code = {"早班":"MORNING","中班":"MIDDLE","晚班":"NIGHT"}[forbidden_shift_label]
+
+                if st.button("💾 儲存禁止班別", use_container_width=True,
+                             disabled=(forbidden_employee is None), key="save_forbidden_shift"):
+                    try:
+                        supabase.table("employee_fixed_rules").insert({
+                            "employee_id": forbidden_employee,
+                            "rule_type": "FORBIDDEN_SHIFT",
+                            "shift": forbidden_shift_code,
+                            "weekday": WEEKDAY_MAP[forbidden_weekday_label],
+                        }).execute()
+                        st.success("✅ 禁止班別已儲存")
+                        st.rerun()
+                    except Exception as error:
+                        st.error("❌ 儲存禁止班別失敗")
+                        st.exception(error)
+
+                current_forbidden = load_forbidden_shifts()
+                if current_forbidden:
+                    weekday_name = {v:k for k,v in WEEKDAY_MAP.items()}
+                    shift_name = {"MORNING":"早班","MIDDLE":"中班","NIGHT":"晚班"}
+                    st.markdown("**目前禁止班別**")
+                    for row in current_forbidden:
+                        c1,c2=st.columns([4,1])
+                        with c1:
+                            st.write(f"{employee_name_map.get(row['employee_id'],row['employee_id'])}｜"
+                                     f"{weekday_name.get(row['weekday'],row['weekday'])}｜"
+                                     f"🚫 {shift_name.get(row['shift'],row['shift'])}")
+                        with c2:
+                            if st.button("刪除", key=f"delete_forbidden_{row['id']}"):
+                                supabase.table("employee_fixed_rules").delete().eq("id",row["id"]).execute()
+                                st.rerun()
+            else:
+                st.info("請先建立員工。")
+
         # ============================================================
         # 7. 固定休假
         # ============================================================
@@ -3342,6 +3402,12 @@ with manager_tab3:
 
             "assignments":
                 assignments_payload,
+
+            "forbidden_shifts": [
+                {"employee": row["employee_id"], "weekday": row["weekday"], "shift": row["shift"]}
+                for row in load_forbidden_shifts()
+                if row.get("employee_id") in employee_ids
+            ],
 
             "preferences": {
 
