@@ -3569,8 +3569,8 @@ with manager_tab3:
             )
 
             st.caption(
-                "目前早／中／晚人力採『精確人數』："
-                "實際排班人數必須等於店長設定，不能少也不能超。"
+                "目前早／中／晚人力以店長設定為『人數上限』："
+                "不能超排；若人力不足仍會產生班表，並顯示缺口。"
                 "另外早班與晚班需求只要 > 0，仍各需要至少 1 位 FT。"
             )
 
@@ -4159,7 +4159,7 @@ with manager_tab3:
 
     st.markdown("### 📚 歷史班表")
     st.caption(
-        "正式儲存後保留最近 2 週。歷史檢核包含偏好滿足程度、"
+        "正式儲存後只保留週日期最新的 2 週；存第 3 週時自動刪除最舊第 1 週。歷史檢核包含偏好滿足程度、"
         "七休一與跨週晚接早。"
     )
 
@@ -4304,7 +4304,9 @@ with manager_tab3:
                         on_conflict="week_start",
                     ).execute()
 
-                    # 只保留最近兩週
+                    # 只保留「週日期最新」的兩週。
+                    # 例如已有第 1、2 週，再存第 3 週，只刪第 1 週；
+                    # 不依新增/修改時間判斷，避免誤刪最近班表。
                     saved_rows = (
                         supabase.table("schedule_history")
                         .select("week_start")
@@ -4312,11 +4314,23 @@ with manager_tab3:
                         .execute()
                     ).data or []
 
-                    for old_row in saved_rows[2:]:
-                        supabase.table("schedule_history").delete().eq(
-                            "week_start",
-                            old_row["week_start"],
-                        ).execute()
+                    saved_week_starts = sorted(
+                        {
+                            row.get("week_start")
+                            for row in saved_rows
+                            if row.get("week_start")
+                        },
+                        reverse=True,
+                    )
+
+                    keep_week_starts = set(saved_week_starts[:2])
+
+                    for old_week_start in saved_week_starts[2:]:
+                        if old_week_start not in keep_week_starts:
+                            supabase.table("schedule_history").delete().eq(
+                                "week_start",
+                                old_week_start,
+                            ).execute()
 
                     st.success("✅ 本週班表已正式儲存")
                     st.rerun()
