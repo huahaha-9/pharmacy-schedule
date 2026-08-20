@@ -208,6 +208,12 @@ class PreferenceConfig(BaseModel):
 # 12-1. 上一週歷史班表（只供跨週硬限制）
 # ============================================================
 
+class ForbiddenShiftRule(BaseModel):
+    employee: str
+    weekday: int = Field(ge=0, le=6)
+    shift: ShiftType
+
+
 class PreviousScheduleDay(BaseModel):
     employee: str
     date: str
@@ -252,6 +258,9 @@ class ScheduleRequest(BaseModel):
     assignments: List[AssignmentRule] = Field(
         default_factory=list
     )
+
+    # 固定禁止班別
+    forbidden_shifts: List[ForbiddenShiftRule] = Field(default_factory=list)
 
     # 偏好
     preferences: PreferenceConfig = Field(
