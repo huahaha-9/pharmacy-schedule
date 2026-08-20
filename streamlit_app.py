@@ -2455,14 +2455,33 @@ else:
                 if st.button("💾 儲存禁止班別", use_container_width=True,
                              disabled=(forbidden_employee is None), key="save_forbidden_shift"):
                     try:
-                        supabase.table("employee_fixed_rules").insert({
-                            "employee_id": forbidden_employee,
-                            "rule_type": "FORBIDDEN_SHIFT",
-                            "shift": forbidden_shift_code,
-                            "weekday": WEEKDAY_MAP[forbidden_weekday_label],
-                        }).execute()
-                        st.success("✅ 禁止班別已儲存")
-                        st.rerun()
+                        forbidden_weekday_value = WEEKDAY_MAP[
+                            forbidden_weekday_label
+                        ]
+
+                        existing_forbidden = load_forbidden_shifts()
+
+                        duplicate_forbidden = any(
+                            row.get("employee_id") == forbidden_employee
+                            and row.get("shift") == forbidden_shift_code
+                            and int(row.get("weekday")) == forbidden_weekday_value
+                            for row in existing_forbidden
+                            if row.get("weekday") is not None
+                        )
+
+                        if duplicate_forbidden:
+                            st.warning(
+                                "⚠️ 這筆禁止班別已經存在，不會重複新增。"
+                            )
+                        else:
+                            supabase.table("employee_fixed_rules").insert({
+                                "employee_id": forbidden_employee,
+                                "rule_type": "FORBIDDEN_SHIFT",
+                                "shift": forbidden_shift_code,
+                                "weekday": forbidden_weekday_value,
+                            }).execute()
+                            st.success("✅ 禁止班別已儲存")
+                            st.rerun()
                     except Exception as error:
                         st.error("❌ 儲存禁止班別失敗")
                         st.exception(error)
