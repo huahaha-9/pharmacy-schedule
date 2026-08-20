@@ -5,7 +5,7 @@ from ortools.sat.python import cp_model
 
 from backend.models import ScheduleRequest
 
-SCHEDULER_BUILD = "2026-08-20-v12"
+SCHEDULER_BUILD = "2026-08-20-v14-cap-clean-diagnostics"
 
 
 # ============================================================
@@ -577,10 +577,15 @@ def add_hard_constraints(
                 if date.fromisoformat(current_date).weekday() == rule.weekday:
                     model.Add(x[rule.employee, current_date, rule.shift] == 0)
 
-    # 7. 一般班別人力 = 店長設定（不可少、不可超）
+    # 7. 一般班別人力上限（不可超過設定；不足由 soft deficit 顯示）
     for current_date in dates:
         for shift in [MORNING, MIDDLE, NIGHT]:
-            model.Add(sum(x[e,current_date,shift] for e in employee_ids) == demand[current_date,shift])
+            model.Add(
+                sum(
+                    x[e, current_date, shift]
+                    for e in employee_ids
+                ) <= demand[current_date, shift]
+            )
 
     # --------------------------------------------------------
     # 8. 早班至少一位 FT
@@ -1568,12 +1573,20 @@ def diagnose_infeasible_with_assumptions(
                         ] == 0
                     ).OnlyEnforceIf(lit)
 
-    # 6. 一般班別精確人力
+    # 6. 一般班別人力上限（同步正式模型）
     for current_date in dates:
-        for shift in [MORNING,MIDDLE,NIGHT]:
-            req=demand[current_date,shift]
-            lit=assumption(f"{current_date} {shift}：人數必須等於 {req}")
-            diagnostic_model.Add(sum(diagnostic_x[e,current_date,shift] for e in employee_ids) == req).OnlyEnforceIf(lit)
+        for shift in [MORNING, MIDDLE, NIGHT]:
+            req = demand[current_date, shift]
+            lit = assumption(
+                f"{current_date} {shift}："
+                f"實際人數不能超過設定上限 {req} 人。"
+            )
+            diagnostic_model.Add(
+                sum(
+                    diagnostic_x[e, current_date, shift]
+                    for e in employee_ids
+                ) <= req
+            ).OnlyEnforceIf(lit)
 
     # 7. 每天早班至少一位 FT
     for current_date in dates:
@@ -1654,15 +1667,74 @@ def diagnose_infeasible_with_assumptions(
     except Exception:
         core = []
 
+    # OR-Tools 回傳的是 sufficient core，不保證最小。
+    # 逐條嘗試移除，留下「拿掉任何一條就不再能證明無解」的精簡核心。
+    minimized_core = list(dict.fromkeys(core))
+
+    def _set_assumptions(literal_indices):
+        if hasattr(diagnostic_model, "ClearAssumptions"):
+            diagnostic_model.ClearAssumptions()
+        elif hasattr(diagnostic_model, "clear_assumptions"):
+            diagnostic_model.clear_assumptions()
+        else:
+            try:
+                del diagnostic_model.Proto().assumptions[:]
+            except Exception:
+                return False
+
+        literals = []
+        for literal_index in literal_indices:
+            try:
+                literals.append(diagnostic_model.GetBoolVarFromProtoIndex(literal_index))
+            except Exception:
+                try:
+                    literals.append(diagnostic_model.get_bool_var_from_proto_index(literal_index))
+                except Exception:
+                    return False
+
+        if hasattr(diagnostic_model, "AddAssumptions"):
+            diagnostic_model.AddAssumptions(literals)
+        elif hasattr(diagnostic_model, "add_assumptions"):
+            diagnostic_model.add_assumptions(literals)
+        else:
+            try:
+                diagnostic_model.Proto().assumptions.extend(
+                    [lit.Index() for lit in literals]
+                )
+            except Exception:
+                return False
+        return True
+
+    # 避免極端情況診斷過久；通常 core 遠小於此上限。
+    if len(minimized_core) <= 40:
+        index = 0
+        while index < len(minimized_core):
+            candidate = minimized_core[:index] + minimized_core[index + 1:]
+            if not candidate:
+                index += 1
+                continue
+
+            if not _set_assumptions(candidate):
+                break
+
+            shrink_solver = cp_model.CpSolver()
+            shrink_solver.parameters.max_time_in_seconds = 0.75
+            shrink_status = shrink_solver.Solve(diagnostic_model)
+
+            if shrink_status == cp_model.INFEASIBLE:
+                minimized_core = candidate
+            else:
+                index += 1
+
     reasons = []
-    for literal_index in core:
+    for literal_index in minimized_core:
         description = descriptions.get(literal_index)
         if description and description not in reasons:
             reasons.append(description)
 
     if reasons:
         return [
-            "以下這組硬限制同時成立時會造成無解：",
+            "真正造成無解的硬限制：",
             *reasons,
         ]
 
