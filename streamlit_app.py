@@ -750,14 +750,42 @@ if not st.session_state.manager_logged_in:
     min_leave_date = date.today() + timedelta(days=15)
     max_leave_date = date.today() + timedelta(days=183)
     
-    leave_date = st.date_input(
-        "排假日期",
-        min_value=min_leave_date,
-        max_value=max_leave_date,
-        value=min_leave_date,
-        key="leave_date",
+    leave_mode = st.radio(
+        "排假方式",
+        ["單日", "連續休假"],
+        horizontal=True,
+        key="leave_mode",
     )
-    
+
+    if leave_mode == "單日":
+        leave_date = st.date_input(
+            "排假日期",
+            min_value=min_leave_date,
+            max_value=max_leave_date,
+            value=min_leave_date,
+            key="leave_date",
+        )
+        leave_end_date = leave_date
+    else:
+        leave_date = st.date_input(
+            "連續休假開始日期",
+            min_value=min_leave_date,
+            max_value=max_leave_date,
+            value=min_leave_date,
+            key="leave_range_start",
+        )
+        leave_end_date = st.date_input(
+            "連續休假結束日期",
+            min_value=leave_date,
+            max_value=max_leave_date,
+            value=leave_date,
+            key="leave_range_end",
+        )
+        st.caption(
+            f"將一次儲存 {(leave_end_date - leave_date).days + 1} 天休假；"
+            "後台仍以每天一筆 OFF 紀錄計算。"
+        )
+
     request_label = st.selectbox(
         "排假 / 指定班",
         [
@@ -775,6 +803,12 @@ if not st.session_state.manager_logged_in:
     }
     
     request_type = request_type_map[request_label]
+
+    if leave_mode == "連續休假" and request_type != "OFF":
+        st.info("連續日期模式只用於休假；指定早班／晚班請使用單日模式。")
+        request_type = "OFF"
+        request_label = "休假"
+
     
     start_time_value = None
     end_time_value = None
@@ -826,26 +860,40 @@ if not st.session_state.manager_logged_in:
         use_container_width=True,
     ):
         try:
-            payload = {
-                "employee_id": employee_id,
-                "request_date": leave_date.isoformat(),
-                "request_type": request_type,
-                "start_time": start_time_value,
-                "end_time": end_time_value,
-                "note": leave_note.strip() or None,
-            }
-    
-            supabase.table("leave_requests").upsert(
-                payload,
-                on_conflict="employee_id,request_date",
-            ).execute()
-    
-            st.success("✅ 排假已儲存")
-    
+            save_dates = []
+            current_save_date = leave_date
+            while current_save_date <= leave_end_date:
+                save_dates.append(current_save_date)
+                current_save_date += timedelta(days=1)
+
+            for save_date in save_dates:
+                payload = {
+                    "employee_id": employee_id,
+                    "request_date": save_date.isoformat(),
+                    "request_type": "OFF" if leave_mode == "連續休假" else request_type,
+                    "start_time": None if leave_mode == "連續休假" else start_time_value,
+                    "end_time": None if leave_mode == "連續休假" else end_time_value,
+                    "note": leave_note.strip() or None,
+                }
+
+                supabase.table("leave_requests").upsert(
+                    payload,
+                    on_conflict="employee_id,request_date",
+                ).execute()
+
+            if len(save_dates) == 1:
+                st.success("✅ 排假已儲存")
+            else:
+                st.success(
+                    f"✅ 已儲存 {save_dates[0].isoformat()} ～ "
+                    f"{save_dates[-1].isoformat()}，共 {len(save_dates)} 天休假"
+                )
+            st.rerun()
+
         except Exception as error:
             st.error("❌ 排假儲存失敗")
             st.exception(error)
-    
+
     st.divider()
     # ============================================================
     # 我的排假紀錄
@@ -884,6 +932,51 @@ if not st.session_state.manager_logged_in:
         st.info("目前沒有排假紀錄。")
     
     
+    else:
+        delete_option_map = {}
+        for delete_record in my_requests:
+            delete_type = delete_record.get("request_type")
+            delete_label = (
+                f"{delete_record['request_date']}｜"
+                f"{request_type_display.get(delete_type, delete_type)}"
+            )
+            if delete_type == "MORNING" and delete_record.get("end_time"):
+                delete_label += f"｜{str(delete_record['end_time'])[:5]} 下班"
+            elif delete_type == "NIGHT" and delete_record.get("start_time"):
+                delete_label += f"｜{str(delete_record['start_time'])[:5]} 上班"
+            if delete_record.get("note"):
+                delete_label += "｜📝"
+            delete_option_map[delete_record["id"]] = delete_label
+
+        selected_delete_ids = st.multiselect(
+            "🗑️ 多選刪除排假",
+            options=list(delete_option_map.keys()),
+            format_func=lambda record_id: delete_option_map[record_id],
+            placeholder="可一次選擇多筆",
+            key="multi_delete_leave_ids",
+        )
+
+        if st.button(
+            "🗑️ 刪除已選項目",
+            disabled=not selected_delete_ids,
+            use_container_width=True,
+            key="delete_selected_leave_requests",
+        ):
+            try:
+                for record_id in selected_delete_ids:
+                    (
+                        supabase.table("leave_requests")
+                        .delete()
+                        .eq("id", record_id)
+                        .eq("employee_id", employee_id)
+                        .execute()
+                    )
+                st.success(f"✅ 已刪除 {len(selected_delete_ids)} 筆排假")
+                st.rerun()
+            except Exception as error:
+                st.error("❌ 批次刪除失敗")
+                st.exception(error)
+
     for record in my_requests:
     
         record_type = record["request_type"]
@@ -1084,15 +1177,10 @@ if not st.session_state.manager_logged_in:
     # ============================================================
     
     st.subheader("👥 這一天還有誰排假？")
-    
-    check_date = st.date_input(
-        "查看日期",
-        value=leave_date,
-        min_value=min_leave_date,
-        max_value=max_leave_date,
-        key="check_same_day_date",
-    )
-    
+
+    check_date = leave_date
+    st.caption(f"自動顯示上方所選日期：{check_date.isoformat()}")
+
     try:
         same_day_response = (
             supabase
